@@ -5,3 +5,8 @@
 # IDE files
 .vscode/
 .idea/
+/cf-prompt-plugin
+/bin/
+/cf-prompt-cli-plugin
+/cf-prompt-plugin-v2
+/cf-prompt-plugin-v3

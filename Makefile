@@ -29,9 +29,9 @@ build:
 	@echo "Plugin built successfully: $(PLUGIN_BINARY)"
 
 # Install the plugin to CF CLI
-install: build
+install: uninstall build
 	@echo "Installing CF prompt plugin..."
-	cf install-plugin -f $(PLUGIN_BINARY)
+	echo "y" | cf install-plugin $(PLUGIN_BINARY)
 	@echo "Plugin installed successfully. Use 'cf prompt --help' to get started."
 
 # Uninstall the plugin from CF CLI
