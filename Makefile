@@ -1,11 +1,19 @@
-.PHONY: deploy-korifi deploy-korifi-debug clean-korifi help
+.PHONY: deploy-korifi deploy-korifi-debug clean-korifi build install uninstall test help
 
 # Default cluster name
 CLUSTER_NAME ?= korifi-dev
 
+# Plugin settings
+PLUGIN_NAME = cf-prompt-plugin
+PLUGIN_BINARY = $(PLUGIN_NAME)
+
 # Help target
 help:
 	@echo "Available targets:"
+	@echo "  build              - Build the CF prompt plugin"
+	@echo "  install            - Install the plugin to CF CLI"
+	@echo "  uninstall          - Uninstall the plugin from CF CLI"
+	@echo "  test               - Run tests"
 	@echo "  deploy-korifi      - Deploy stable Korifi v0.16.0 on kind cluster"
 	@echo "  deploy-korifi-debug - Deploy Korifi with debugging enabled"
 	@echo "  clean-korifi       - Delete the kind cluster"
@@ -13,6 +21,34 @@ help:
 	@echo ""
 	@echo "Variables:"
 	@echo "  CLUSTER_NAME       - Name of the kind cluster (default: korifi-dev)"
+
+# Build the plugin
+build:
+	@echo "Building CF prompt plugin..."
+	devbox run -- go build -o $(PLUGIN_BINARY)
+	@echo "Plugin built successfully: $(PLUGIN_BINARY)"
+
+# Install the plugin to CF CLI
+install: build
+	@echo "Installing CF prompt plugin..."
+	cf install-plugin -f $(PLUGIN_BINARY)
+	@echo "Plugin installed successfully. Use 'cf prompt --help' to get started."
+
+# Uninstall the plugin from CF CLI
+uninstall:
+	@echo "Uninstalling CF prompt plugin..."
+	cf uninstall-plugin prompt || true
+	@echo "Plugin uninstalled."
+
+# Run tests
+test:
+	@echo "Running tests..."
+	devbox run -- go test ./...
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f $(PLUGIN_BINARY)
 
 # Deploy Korifi using stable release
 deploy-korifi:
