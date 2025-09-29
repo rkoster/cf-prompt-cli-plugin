@@ -1,1 +1,7 @@
-/korifi/
+# Temporary files and logs
+*.log
+*.tmp
+
+# IDE files
+.vscode/
+.idea/
