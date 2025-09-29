@@ -125,13 +125,15 @@ function install_dependencies() {
   
   # Install kpack
   echo "Installing kpack..."
-  kubectl apply -f https://github.com/buildpacks-community/kpack/releases/download/v0.14.2/release-0.14.2.yaml
-  kubectl wait --for=condition=Available=True deployment -l app.kubernetes.io/name=kpack -n kpack --timeout=5m
+  kubectl apply -f https://github.com/buildpacks-community/kpack/releases/download/v0.13.4/release-0.13.4.yaml
+  echo "Waiting for kpack controller to be ready..."
+  kubectl wait --for=condition=Available=True deployment/kpack-controller -n kpack --timeout=5m
   
   # Install contour with Gateway API support
   echo "Installing contour..."
   kubectl apply -f https://projectcontour.io/quickstart/contour-gateway-provisioner.yaml
-  kubectl wait --for=condition=Available=True deployment -l app.kubernetes.io/name=contour -n projectcontour --timeout=5m
+  echo "Waiting for contour gateway provisioner to be ready..."
+  kubectl wait --for=condition=Available=True deployment/contour-gateway-provisioner -n projectcontour --timeout=5m
 }
 
 function configure_contour() {
@@ -243,6 +245,11 @@ function create_cluster_builder() {
   kubectl wait --for=condition=ready clusterbuilder kind-builder --timeout=15m
 }
 
+function create_cf_admin_user() {
+  echo "Creating cf-admin user with client certificates..."
+  "$SCRIPT_DIR/create-new-user.sh" cf-admin
+}
+
 function main() {
   parse_cmdline_args "$@"
   validate_registry_params
@@ -254,11 +261,12 @@ function main() {
   deploy_korifi
   create_cluster_builder
   configure_contour
+  create_cf_admin_user
   
   echo ""
   echo "Korifi deployment completed successfully!"
-  echo "You can now use 'cf login' to connect to the API at https://localhost"
-  echo "Use the 'cf-admin' user when prompted for login."
+  echo "You can now use 'cf auth cf-admin' to authenticate."
+  echo "API endpoint: https://localhost"
 }
 
 main "$@"
