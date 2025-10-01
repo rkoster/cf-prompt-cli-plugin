@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-proxy-config
+  namespace: korifi
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    
+    http {
+        upstream korifi_api {
+            server korifi-api-server-service.korifi.svc.cluster.local:443;
+        }
+        
+        upstream uaa_server {
+            server uaa.uaa-system.svc.cluster.local:8080;
+        }
+        
+        server {
+            listen 80;
+            server_name localhost;
+            
+            # Override the info endpoint to point to UAA
+            location /v3/info {
+                add_header Content-Type application/json;
+                return 200 '{
+                    "name": "Cloud Foundry",
+                    "build": "1.0.0",
+                    "support": "https://help.cloudfoundry.org",
+                    "version": 1,
+                    "description": "CF API",
+                    "authorization_endpoint": "http://localhost:30080/uaa/oauth/authorize",
+                    "token_endpoint": "http://localhost:30080/uaa/oauth/token",
+                    "user": "http://localhost:30080/uaa/userinfo",
+                    "login_endpoint": "http://localhost:30080/uaa",
+                    "doppler_logging_endpoint": "wss://doppler.localhost"
+                }';
+            }
+            
+            # Proxy UAA endpoints
+            location /uaa/ {
+                proxy_pass http://uaa_server/uaa/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+            
+            # Proxy all other requests to Korifi
+            location / {
+                proxy_pass https://korifi_api;
+                proxy_ssl_verify off;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-proxy
+  namespace: korifi
+spec:
+  selector:
+    matchLabels:
+      app: nginx-proxy
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx-proxy
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - name: http
+          containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-proxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-proxy
+  namespace: korifi
+spec:
+  selector:
+    app: nginx-proxy
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    nodePort: 30000
+  type: NodePort
