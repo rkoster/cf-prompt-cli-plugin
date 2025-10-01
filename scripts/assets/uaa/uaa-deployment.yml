@@ -1,0 +1,221 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uaa-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: uaa
+  namespace: uaa-system
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: uaa-config
+  namespace: uaa-system
+data:
+  uaa.yml: |
+    issuer:
+      uri: http://uaa.uaa-system.svc.cluster.local:8080/uaa
+    
+    spring_profiles: hsqldb
+    
+    database:
+      url: jdbc:hsqldb:mem:uaa
+      username: ""
+      password: ""
+      
+    jwt:
+      token:
+        policy:
+          activeKeyId: uaa-jwt-key-1
+          keys:
+            uaa-jwt-key-1:
+              signingKey: |
+                -----BEGIN RSA PRIVATE KEY-----
+                MIIEowIBAAKCAQEA4f5wg5l2hKsTeNem/V41fGnJm6gOdrj8ym3rFkEjWT2btf0n
+                T8eLlObvhz7+IWjqqT5mg1x8w+4dJJqCfqlFNGLNUfawwKvKQGOGCYgXdNjOmDnK
+                PBN0wQ3AGJP8k0tWAWFP+WUXQ+SjC+sVIqLGBF8YlVUe5s6oGC7YGgtxFDcyqL8C
+                D5UlBKU8L7k2FQVF4P8VYXYCePd7eeQ8JjMq1qO+/3eOJGpGnQqAHhQJwaDnGKJg
+                HElh8lBV5gGHQw6AJLXObtNVAAKQnCILQUm+GUklJRHEfATPgQdtDUL/2k8MJj9a
+                FrMOuqHM4QQ3cUAJCwOy5z9iJ0E6TKVYV8VHXwIDAQABAoIBAEGjrUXCd8O4X8eC
+                BhfbV2VQ9sDBj8iZ+c2lVDfAb6eSNhWgYaJDCbH9O4TFNyg8FEHqMXDlxzFNjYTy
+                7gEKfx1+RBZoNjLpD7eAHHKLKS7pDCuDcKU3dEYEyWzK9fOp5IbNVGVx3YNJOb6H
+                3K+VkUjp2PHj+vYKwACQZ+LyR0KvGlz3BHQ4lmOWVbKbKmVLsNYB+5y4Dk2FVKhm
+                HO1cInDO0gzSyq9SJxJJ1F9KJpJK8YWfxKOyO6GkKgZlKqOhV0N+7T3D7w5VTYQE
+                MK+NOhiOpGKRe7F+w6i3L2gKG0Y6kqZ+QxD1E8qX3T2D6v3I3NXq7f2+l9qvpgvF
+                t3IbYQECgYEA+W2g5q8vgKY9C8OQUK7qk8LbzP7y0D3hKqKz2WvF9A8jP7Z7TQl2
+                k1UvYzF4TGnO1+Y5nDGkLKYnO4B8OVQj4LX8X7JNyKy9lKhKlL8TqJ2D7cKIgXQs
+                QYzq9oSyX3WYLJy9YNhBGZQZq8kJ3jZYl6N8X5JGQnQlPwQ4k5QcDgECgYEA6c1s
+                3aDl0g6Y6UEFp+U7E3pf3K2LGK4T9BgOGnp2l5cKZ2I9fqOqN4AXOqO0YqvVLqGN
+                5qKS9XWQNGlQj2TGnLQ+w5VKkDd8TqKzgV9dKKqYoZ4LvZK3KYBgY7v2Y9C1K6YE
+                D8GqU4SvKqBTYV5E7QAhDWB5y8gWXZnJ2XvZA78CgYEAvY9z6G+YGgXCyK7QT5T1
+                K3PVqhCdKE1M8pTv9G8jf9xJZl8lUqHqLO2tYCE2Z+7qDwP1q8JEsN7PwQoNT6K3
+                fG+y4c2yG6K+4QZ4Nj3qeT2QFyYqz2OhP1j8lUqHqLO2tYCE2Z+7qDwP1q8JEsN7
+                PwQoNT6K3fG+y4c2yG6K+4QZ4Nj3qeT2QFyYqz2OhP1j8lUqHqLO2tYCE2Z+7qBA
+                -----END RSA PRIVATE KEY-----
+                
+    scim:
+      users:
+        - admin|admin|admin@test.org|admin|admin|uaa.admin
+      user:
+        override: true
+        
+    oauth:
+      clients:
+        admin:
+          authorized-grant-types: client_credentials
+          scope: clients.read,clients.write,clients.secret,uaa.admin,scim.read,scim.write,password.write
+          authorities: clients.read,clients.write,clients.secret,uaa.admin,scim.read,scim.write,password.write
+          secret: admin-secret
+        cf:
+          override: true
+          authorized-grant-types: password,refresh_token
+          scope: cloud_controller.read,cloud_controller.write,openid,password.write,scim.userids,cloud_controller.admin,scim.read,scim.write
+          authorities: uaa.none
+          access-token-validity: 600
+          refresh-token-validity: 2592000
+          
+    zones:
+      internal:
+        hostnames:
+          - uaa.uaa-system.svc.cluster.local
+          - localhost
+          - 127.0.0.1
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uaa-admin-client-credentials
+  namespace: uaa-system
+data:
+  admin_client_credentials.yml: |
+    YWRtaW46CiAgY2xpZW50X3NlY3JldDogYWRtaW4tc2VjcmV0
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uaa-jwt-policy-signing-keys
+  namespace: uaa-system
+data:
+  jwt_policy_signing_keys.yml: |
+    and0OgogIHBvbGljeToKICAgIGFjdGl2ZUtleUlkOiB1YWEtand0LWtleS0xCiAgICBrZXlzOgogICAgICB1YWEtand0LWtleS0xOgogICAgICAgIHNpZ25pbmdLZXk6IHwKICAgICAgICAgIC0tLS0tQkVHSU4gUlNBIFBSSVZBVEUgS0VZLS0tLS0KICAgICAgICAgIE1JSUVvd0lCQUFLQ0FRRUF1Zjdod2dWOTJaVEJ5ODNsalgyMVBBdFhOdm1DTElpcEZnVG9ockNScQogICAgICAgICAgQ0xaVEFmNHRCYnVVVVMvOGg1czZUTW5TcFZJb1VTWmlZYnVJaXZhdjY5TTV6aE9zUStPZnVHc04KICAgICAgICAgIHFxKzN4cktIczZ6cVAybWpXYTZXOUwwOWVZQU1jb1F3SlZabGt5MER6bzRMcmNtanJWTnBsRkEvCiAgICAgICAgICBDd2MrUVVySUZEVkwrOUZVVlZjYXdReWNaUCt4NVZ6a085czNGVUYwMzRTSzZuSWFWcWFhbDFKMwogICAgICAgICAgQ05DYWNOOHRTMU5TS3IyNUlGZHBaeHdFeEhBRm1UQS9BTjQwNXovWnNPY3UzQ2I5VzNPSUcwRlNyCiAgICAgICAgICB6NVVmcjc5TDJRSzlsZnVwaE9hOWh6dEtXMnFGSXcwRGNWckUrckFGVXpVUWlxVzVMRkt4Y3dJREEKICAgICAgICAgIFFBQkFvSUJBUUNvdEVrUktjNURuNklQQWNITk1IcU5pOUcxRGNGSDVFQ0lqeTMwSFhVNVlkU3RuCiAgICAgICAgICBubEZsdXBYVUlYSGcwYjBRdHQrdU9TZ0s3VTl5TVR4SlVPRDJhMGs1enZFZFdRZUVqNk0xYXNqTQogICAgICAgICAgTHVIOWNtSy9xejZUUENCZGM1akRMVUJTcWU1SUFkQUlPU09JOFNLc3NaSzFIeUJ1K1FmSDJ4CiAgICAgICAgICBEZmVnZm5vYlJIeEY5bWR2TURMTU9jcUFnSFU1TUh4L2hEVnEyQ0ppQzZiYkw1eE9zZko2K3lxTgogICAgICAgICAgS0JtYmJJWXpxL0Zzd2pYc1VZZGRiYVNHajVPTzYzM3BkQUtNQ3VpZ05FNVZBQW5IVGdheVZ6eTEKICAgICAgICAgIEVHaDlQMVlwNmQ3OFQrWVJzb2xONWRqZlNZUm5rOHdvQW9HQkFNZ3VDd1pKZXVrU3ExeEpLUEtECiAgICAgICAgICBmSGJYZ0gyVmt5UFNtMGVsZmJjN2NGZFJ5ckVWN3h2TGZFdjlSMUE1WEFITmRJdnVUTWplSGlNVwogICAgICAgICAgQ0xDbVVJQi9LYzNacFR1UkxKUEU4UDNSbHZvWCtiL29OMjN3U09EaE1DbG1JbUtzRHZUVE13MmNmCiAgICAgICAgICBVUWJNSFNZSktMVkZidW50OE1ZWE16Sk1yQm9nQ1FRUVIzTCsyTnkxMUhkYyt3NUd2aU8wbDU3MwogICAgICAgICAgSDVKYmltZzJ5WDZkbng2dENEWkdjVDByOGVqVE5OZnZIOUtOWkxrRUJ2OE5jdGRZSExiQVdTM1oKICAgICAgICAgIEVJQ3ZzN1JHWnUyM0NESmJ4MHFxWEUwNHZROU1LY3hMSkwrMU40WFdNcVFpYkpzaXpmZU9rMWp1CiAgICAgICAgICBnbWY4djI5cWV1Q3dDQUFBUW5Pb2NlYVR3U3Q2VHMvODdDY21JdXhmcGlJblRrT0ZnOCs5V3dYawogICAgICAgICAgZ1k5Y1Zxd3BlSUFmbXE4WkdJRVNaQVV5MEdZb0NVMU9sMnF4aXZoZDdrWkJjT1p0cFBkYXpNNVlyCiAgICAgICAgICBBQ2wvcEhWWGhNaFJVNnFPU254QkVHVmVGdmNkOEYyOGc2c00zdllPZ2R2Q0F3Qllaejdac3NxQwogICAgICAgICAgZWNyQzJON3Y3MVp6b1ZhRFZMeDJGaE5oR3ErMXBlVHVnZS9GbGRrZFIrZTcvWE1lSUZmWGNYNUoKICAgICAgICAgIER1LzI2RUtxMGxFb1pJVEE9PQogICAgICAgICAgLS0tLS1FTkQgUlNBIFBSSVZBVEUgS0VZLS0tLS0=
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uaa-saml-keys
+  namespace: uaa-system
+data:
+  saml_keys.yml: |
+    bG9naW46CiAgc2FtbDoKICAgIGFjdGl2ZUtleUlkOiB1YWEtc2FtbC1rZXktMQogICAga2V5czoKICAgICAgdWFhLXNhbWwta2V5LTE6CiAgICAgICAgY2VydGlmaWNhdGU6IHwKICAgICAgICAgIC0tLS0tQkVHSU4gQ0VSVElGSUNBVEUtLS0tLQogICAgICAgICAgTUlJQ0x6Q0NBZGNDQVFBd0RRWUpLb1pJaHZjTkFRRUJCUUFEZ2dGbUFEQ0JSZ0pCQUsyMjJxdAogICAgICAgICAgZzN1c0hpTytXRlNZSmtOcVp5cmhMV1VBVDdHRWh3NjlBTmpDeXBVVFNlUGcycUtWazVkYW5VaE0KICAgICAgICAgIFZPSDVMcGFQZFpDaXBHZUFCcUdWM0hOUUVxUHErc0ZFcTN1aW9EWmRFOFlMWVJaZjNYajczRXFnCiAgICAgICAgICBaUWFRVmdkYndrPQogICAgICAgICAgLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQogICAgICAgIGtleTogfAogICAgICAgICAgLS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQogICAgICAgICAgTUlJRHZEQ0NBaVJBZ0VBQWZab2dhcE1MdE1Bc2dtT1JYcFQ2TktVZDJ0SjFIcCtadDZ3T3M1VQogICAgICAgICAgZFp4YW5PUUJNRzFObDdkcTNlQ3I3YjRRVEYyVlNjWWNBeG9PODBEMzVmNjhmUkV6cHZzTGlOUQogICAgICAgICAgYWZDZ3dhYXR6a1JvcXVXanFHYjRqb1VQZ0Q3bVJ3SDBTUk1RdlNZUFZ6L1VJYlhSMUJBTUUyd3MKICAgICAgICAgIGVRZWlVWkNaNFpRYTYrK08xaVJoMCtleUtHS2RQTU4wWWdTUW9WRkQxcnRwdUlQYkcxNUhqc1IKICAgICAgICAgIEIrU2xuNkZOY21qSUJlT1BGU29IcWdZVFhjQ3l0bFowSGpKWmNYT2ZGSnZPZ05hOUJIR0EycVFpCiAgICAgICAgICBvU3BpUUhSdGNZd2QzaGYya2RXS1BTYnZtcE5MY1hwOGJpajMrUnY2L0xFYzNmVm9UY3Z3d0VhKwogICAgICAgICAgc1htYzRicXNCNzluaTNaUGd0YWRrU2RCWXRaMGRKdS91LzZwMlJYbXB6UGdBZz09CiAgICAgICAgICAtLS0tLUVORCBSU0EgUFJJVkFURSBLRVktLS0tLQ==
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: encryption-keys
+  namespace: uaa-system
+data:
+  encryption_keys.yml: |
+    ZW5jcnlwdGlvbjoKICBhY3RpdmVfa2V5X2xhYmVsOiBrZXktMQogIGVuY3J5cHRpb25fa2V5czoKICAgIC0gbGFiZWw6IGtleS0xCiAgICAgIHBhc3NwaHJhc2U6ICJkZWZhdWx0LXBhc3NwaHJhc2UiCg==
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uaa
+  namespace: uaa-system
+spec:
+  selector:
+    matchLabels:
+      app: uaa
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: uaa
+    spec:
+      serviceAccountName: uaa
+      containers:
+      - name: uaa
+        image: cloudfoundry/uaa:latest
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 50m
+          limits:
+            memory: 2000Mi
+            cpu: 500m
+        ports:
+        - name: http-uaa
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: BPL_TOMCAT_ACCESS_LOGGING
+          value: "y"
+        - name: JAVA_OPTS
+          value: "-Djava.security.egd=file:/dev/./urandom -Xmx1600m -XX:MaxMetaspaceSize=256m"
+        - name: spring_profiles
+          value: "hsqldb"
+        volumeMounts:
+        - name: uaa-config
+          mountPath: /uaa
+        - name: admin-client-credentials-file
+          mountPath: /etc/secrets/admin_client_credentials.yml
+          subPath: admin_client_credentials.yml
+          readOnly: true
+        - name: jwt-policy-signing-keys-file
+          mountPath: /etc/secrets/jwt_policy_signing_keys.yml
+          subPath: jwt_policy_signing_keys.yml
+          readOnly: true
+        - name: saml-keys-file
+          mountPath: /etc/secrets/saml_keys.yml
+          subPath: saml_keys.yml
+          readOnly: true
+        - name: encryption-keys-file
+          mountPath: /etc/secrets/encryption_keys.yml
+          subPath: encryption_keys.yml
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http-uaa
+          failureThreshold: 25
+          initialDelaySeconds: 60
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http-uaa
+      volumes:
+      - name: uaa-config
+        configMap:
+          name: uaa-config
+      - name: admin-client-credentials-file
+        secret:
+          secretName: uaa-admin-client-credentials
+      - name: jwt-policy-signing-keys-file
+        secret:
+          secretName: uaa-jwt-policy-signing-keys
+      - name: saml-keys-file
+        secret:
+          secretName: uaa-saml-keys
+      - name: encryption-keys-file
+        secret:
+          secretName: encryption-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uaa
+  namespace: uaa-system
+spec:
+  selector:
+    app: uaa
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    nodePort: 30080
+  type: NodePort
