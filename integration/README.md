@@ -28,15 +28,33 @@ devbox run -- go test -v ./integration/... -ginkgo.v -timeout 30m
 
 ## Test Environment Variables
 
-You can customize the test environment with the following variables:
+The test suite will automatically create and clean up temporary orgs and spaces when environment variables are not provided:
 
-- `CF_ORG`: Cloud Foundry organization (default: "cf-org")
-- `CF_SPACE`: Cloud Foundry space (default: "cf-space")
+- `CF_ORG`: Cloud Foundry organization (optional - random org created if omitted)
+- `CF_SPACE`: Cloud Foundry space (optional - random space created if omitted)
 
-Example:
+### Using Existing Org/Space
+
+If you want to use an existing org and space:
+
 ```bash
 CF_ORG=my-org CF_SPACE=my-space make integration-test
 ```
+
+### Using Random Org/Space (Recommended)
+
+For isolated test runs, simply run without environment variables:
+
+```bash
+make integration-test
+```
+
+The test suite will:
+1. Create a random org with name `test-org-{random-number}`
+2. Create a random space with name `test-space-{random-number}`
+3. Run the tests in the isolated environment
+4. Clean up the space and org after tests complete
+
 
 ## Test Workflow
 
