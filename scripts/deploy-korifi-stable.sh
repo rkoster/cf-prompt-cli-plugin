@@ -191,6 +191,7 @@ function deploy_korifi() {
     --set=experimental.managedServices.enabled="true" \
     --set=experimental.securityGroups.enabled="true" \
     --set=experimental.managedServices.trustInsecureBrokers="true" \
+    --set=experimental.uaa.enabled="true" \
     --set=api.list.defaultPageSize="5000" \
     --timeout="15m" \
     --wait
@@ -250,6 +251,28 @@ function create_cf_admin_user() {
   "$SCRIPT_DIR/create-new-user.sh" cf-admin
 }
 
+function deploy_uaa() {
+  echo "Deploying UAA..."
+  kubectl apply -f "$SCRIPT_DIR/assets/uaa/uaa-deployment.yml"
+  
+  # Wait for UAA to be ready
+  echo "Waiting for UAA to be ready..."
+  kubectl wait --for=condition=Available=True deployment/uaa -n uaa-system --timeout=10m
+  
+  echo "UAA deployment completed!"
+}
+
+function deploy_nginx_proxy() {
+  echo "Deploying nginx proxy..."
+  kubectl apply -f "$SCRIPT_DIR/assets/uaa/nginx-proxy.yml"
+  
+  # Wait for nginx proxy to be ready
+  echo "Waiting for nginx proxy to be ready..."
+  kubectl wait --for=condition=Available=True deployment/nginx-proxy -n korifi --timeout=5m
+  
+  echo "Nginx proxy deployment completed!"
+}
+
 function main() {
   parse_cmdline_args "$@"
   validate_registry_params
@@ -261,12 +284,18 @@ function main() {
   deploy_korifi
   create_cluster_builder
   configure_contour
+  deploy_uaa
+  deploy_nginx_proxy
   create_cf_admin_user
   
   echo ""
-  echo "Korifi deployment completed successfully!"
+  echo "Korifi deployment with UAA completed successfully!"
   echo "You can now use 'cf auth cf-admin' to authenticate."
-  echo "API endpoint: https://localhost"
+  echo "API endpoint: http://localhost:30000"
+  echo "UAA endpoint: http://localhost:30080/uaa"
+  echo ""
+  echo "Test login with:"
+  echo "echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a http://localhost:30000"
 }
 
 main "$@"
