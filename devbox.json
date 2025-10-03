@@ -11,7 +11,9 @@
     "git@latest",
     "curl@latest",
     "gnumake@latest",
-    "yq-go@latest"
+    "yq-go@latest",
+    "vendir@latest",
+    "ytt@latest"
   ],
   "shell": {
     "init_hook": [
