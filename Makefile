@@ -22,6 +22,16 @@ help:
 	@echo ""
 	@echo "Variables:"
 	@echo "  CLUSTER_NAME       - Name of the kind cluster (default: korifi-dev)"
+	@echo ""
+	@echo "UAA Support:"
+	@echo "  The deploy-korifi target now includes UAA deployment with:"
+	@echo "  - In-memory HSQLDB storage"
+	@echo "  - Admin user: admin/admin"
+	@echo "  - API proxy via nginx at http://localhost:30000"
+	@echo "  - UAA direct access at http://localhost:30080/uaa"
+	@echo ""
+	@echo "Test login:"
+	@echo "  echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a http://localhost:30000"
 
 # Build the plugin
 build:

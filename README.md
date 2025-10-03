@@ -83,15 +83,42 @@ make test
 
 ### Development Environment
 
-This project includes a complete Korifi development environment:
+This project includes a complete Korifi development environment with UAA support:
 
 ```bash
-# Deploy Korifi on kind cluster
+# Deploy Korifi with UAA on kind cluster
 make deploy-korifi
 
 # Clean up
 make clean-korifi
 ```
+
+#### UAA Configuration
+
+The Korifi deployment now includes UAA (User Account and Authentication) server for proper Cloud Foundry authentication:
+
+- **UAA Endpoint**: http://localhost:30080/uaa
+- **API Endpoint**: http://localhost:30000 (proxied through nginx)
+- **Default Admin User**: admin/admin
+- **Database**: In-memory HSQLDB (no persistence required for development)
+
+#### Testing Authentication
+
+```bash
+# Test login with admin credentials
+echo -e "admin\nadmin" | CF_TRACE=true cf login -a http://localhost:30000
+
+# Verify authentication
+cf auth
+```
+
+#### Architecture
+
+The UAA integration includes:
+- UAA server deployed in `uaa-system` namespace
+- nginx proxy in `korifi` namespace that overrides the `/v3/info` endpoint
+- Korifi configured with experimental UAA mode enabled
+- In-memory database for development simplicity
 
 ## Contributing
 
