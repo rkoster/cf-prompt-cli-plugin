@@ -1,4 +1,4 @@
-.PHONY: deploy-korifi deploy-korifi-debug clean-korifi build install uninstall test help
+.PHONY: deploy-korifi deploy-korifi-debug clean-korifi build install uninstall test integration-test help
 
 # Default cluster name
 CLUSTER_NAME ?= korifi-dev
@@ -13,9 +13,10 @@ help:
 	@echo "  build              - Build the CF prompt plugin"
 	@echo "  install            - Install the plugin to CF CLI"
 	@echo "  uninstall          - Uninstall the plugin from CF CLI"
-	@echo "  test               - Run tests"
-	@echo "  deploy-korifi      - Deploy stable Korifi v0.16.0 with UAA on kind cluster"
-	@echo "  deploy-korifi-debug - Deploy Korifi with UAA and debugging enabled"
+	@echo "  test               - Run unit tests"
+	@echo "  integration-test   - Run integration tests (requires deployed Korifi)"
+	@echo "  deploy-korifi      - Deploy stable Korifi v0.16.0 on kind cluster"
+	@echo "  deploy-korifi-debug - Deploy Korifi with debugging enabled"
 	@echo "  clean-korifi       - Delete the kind cluster"
 	@echo "  help               - Show this help message"
 	@echo ""
@@ -52,8 +53,14 @@ uninstall:
 
 # Run tests
 test:
-	@echo "Running tests..."
-	devbox run -- go test ./...
+	@echo "Running unit tests..."
+	devbox run -- go test ./cmd/...
+
+# Run integration tests
+integration-test: install
+	@echo "Running integration tests..."
+	@echo "Note: This assumes 'make deploy-korifi' has been executed and cf CLI is available"
+	devbox run -- go test -v ./integration/... -ginkgo.v -timeout 30m
 
 # Clean build artifacts
 clean:
