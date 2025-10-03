@@ -251,9 +251,25 @@ function create_cf_admin_user() {
   "$SCRIPT_DIR/create-new-user.sh" cf-admin
 }
 
+function sync_uaa_templates() {
+  echo "Syncing UAA templates from upstream..."
+  (
+    cd "$ROOT_DIR/.."
+    vendir sync
+  )
+}
+
 function deploy_uaa() {
-  echo "Deploying UAA..."
-  kubectl apply -f "$SCRIPT_DIR/assets/uaa/uaa-deployment.yml"
+  echo "Deploying UAA using ytt..."
+  
+  # Create namespace first
+  kubectl create namespace uaa-system --dry-run=client -o yaml | kubectl apply -f -
+  
+  # Deploy UAA using ytt with upstream templates
+  ytt -f "$SCRIPT_DIR/assets/templates/uaa" \
+      -f "$SCRIPT_DIR/assets/templates/uaa-values.yml" \
+      -f "$SCRIPT_DIR/assets/templates/uaa-overlay.yml" \
+      | kubectl apply -f -
   
   # Wait for UAA to be ready
   echo "Waiting for UAA to be ready..."
@@ -284,6 +300,7 @@ function main() {
   deploy_korifi
   create_cluster_builder
   configure_contour
+  sync_uaa_templates
   deploy_uaa
   deploy_nginx_proxy
   create_cf_admin_user
