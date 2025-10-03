@@ -260,18 +260,12 @@ function sync_uaa_templates() {
 }
 
 function deploy_uaa() {
-  echo "Deploying UAA using ytt..."
+  echo "Deploying UAA using upstream templates..."
   
-  # Create namespace first
   kubectl create namespace uaa-system --dry-run=client -o yaml | kubectl apply -f -
   
-  # Deploy UAA using ytt with upstream templates
-  ytt -f "$SCRIPT_DIR/assets/templates/uaa" \
-      -f "$SCRIPT_DIR/assets/templates/uaa-values.yml" \
-      -f "$SCRIPT_DIR/assets/templates/uaa-overlay.yml" \
-      | kubectl apply -f -
+  kubectl apply -f "$SCRIPT_DIR/assets/templates/kind-builder.yml"
   
-  # Wait for UAA to be ready
   echo "Waiting for UAA to be ready..."
   kubectl wait --for=condition=Available=True deployment/uaa -n uaa-system --timeout=10m
   
