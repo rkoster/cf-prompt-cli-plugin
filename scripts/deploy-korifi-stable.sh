@@ -77,60 +77,72 @@ function validate_registry_params() {
 }
 
 function start_uaa_docker() {
-  echo "Starting UAA in Docker with SSL..."
+  echo "Starting UAA with nginx SSL termination proxy..."
   
-  docker stop uaa 2>/dev/null || true
-  docker rm uaa 2>/dev/null || true
+  docker stop uaa nginx-ssl 2>/dev/null || true
+  docker rm uaa nginx-ssl 2>/dev/null || true
   
-  cat > /tmp/uaa-ssl-setup.sh <<'EOF'
-#!/bin/bash
-set -euo pipefail
-
-echo "Setting up SSL keystore for UAA..."
-
-mkdir -p /uaa/cert
-
-cat /etc/config/uaa-ssl.crt /etc/config/uaa-ssl.key > /tmp/uaa-combined.pem
-
-openssl pkcs12 -export \
-  -name uaa_ssl_cert \
-  -in /tmp/uaa-combined.pem \
-  -out /uaa/cert/uaa_keystore.p12 \
-  -password pass:uaa-ssl-password
-
-chown -R vcap:vcap /uaa/cert
-chmod 600 /uaa/cert/uaa_keystore.p12
-
-echo "SSL keystore created successfully"
-
-exec /usr/local/bin/docker-entrypoint.bash
-EOF
+  # Ensure SSL certificate directory exists
+  mkdir -p "${TEMPLATES_DIR}/uaa-cert"
   
-  chmod +x /tmp/uaa-ssl-setup.sh
+  # Generate SSL certificate if it doesn't exist (only need crt/key for nginx)
+  if [ ! -f "${TEMPLATES_DIR}/uaa-cert/uaa.crt" ]; then
+    echo "Generating SSL certificate for UAA..."
+    openssl req -new -x509 -nodes -days 365 -subj "/CN=uaa-127-0-0-1.nip.io" \
+      -keyout "${TEMPLATES_DIR}/uaa-cert/uaa.key" \
+      -out "${TEMPLATES_DIR}/uaa-cert/uaa.crt"
+  fi
   
+  # Start UAA on HTTP only (no SSL complexity)
   docker run -d \
     --name uaa \
     --hostname uaa-127-0-0-1.nip.io \
     -p 8080:8080 \
-    -p 8443:8443 \
     -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
-    -v /tmp/uaa-ssl-setup.sh:/usr/local/bin/uaa-ssl-setup.sh:ro \
-    -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config -Duaa.ssl.port=8443 -Duaa.sslCertificate=/etc/config/uaa-ssl.crt -Duaa.sslPrivateKey=/etc/config/uaa-ssl.key" \
-    --entrypoint /usr/local/bin/uaa-ssl-setup.sh \
+    -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
     cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880
   
-  echo "Waiting for UAA to be ready..."
+  # Wait for UAA to be ready on HTTP
+  echo "Waiting for UAA HTTP server to be ready..."
   for i in {1..30}; do
-    if curl -sk https://localhost:8443/healthz > /dev/null 2>&1; then
-      echo "UAA is ready on HTTPS!"
-      return 0
+    if curl -s http://localhost:8080/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTP!"
+      break
     fi
     echo "Waiting for UAA to start (attempt $i/30)..."
     sleep 2
   done
   
-  echo "ERROR: UAA failed to start within 60 seconds"
-  docker logs uaa
+  if ! curl -s http://localhost:8080/login > /dev/null 2>&1; then
+    echo "ERROR: UAA failed to start within 60 seconds"
+    docker logs uaa
+    exit 1
+  fi
+  
+  # Start nginx SSL termination proxy
+  echo "Starting nginx SSL termination proxy..."
+  docker run -d \
+    --name nginx-ssl \
+    -p 8443:8443 \
+    -v "${TEMPLATES_DIR}/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    -v "${TEMPLATES_DIR}/uaa-cert/uaa.crt:/etc/ssl/certs/uaa.crt:ro" \
+    -v "${TEMPLATES_DIR}/uaa-cert/uaa.key:/etc/ssl/private/uaa.key:ro" \
+    --add-host=host.docker.internal:host-gateway \
+    nginx:alpine
+  
+  # Wait for HTTPS to be ready
+  echo "Waiting for nginx HTTPS proxy to be ready..."
+  for i in {1..15}; do
+    if curl -k -s https://localhost:8443/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTPS via nginx proxy!"
+      return 0
+    fi
+    echo "Waiting for nginx SSL proxy (attempt $i/15)..."
+    sleep 2
+  done
+  
+  echo "ERROR: nginx SSL proxy failed to start"
+  docker logs nginx-ssl
   exit 1
 }
 
@@ -233,7 +245,7 @@ function main() {
   echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
   echo "UAA Access:"
-  echo "  - UAA URL: https://uaa-127-0-0-1.nip.io/uaa"
+  echo "  - UAA URL: https://uaa-127-0-0-1.nip.io:8443/uaa"
   echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"
