@@ -82,13 +82,45 @@ function start_uaa_docker() {
   docker stop uaa nginx-ssl 2>/dev/null || true
   docker rm uaa nginx-ssl 2>/dev/null || true
   
+  # Get kind network gateway IP (static IP for UAA access from kind cluster)
+  local kind_gateway_ip="172.19.0.1"
+  
   # Ensure SSL certificate directory exists
   mkdir -p "${TEMPLATES_DIR}/uaa-cert"
   
-  # Generate SSL certificate if it doesn't exist (only need crt/key for nginx)
+  # Generate SSL certificate with SAN including both hostname and gateway IP
   if [ ! -f "${TEMPLATES_DIR}/uaa-cert/uaa.crt" ]; then
-    echo "Generating SSL certificate for UAA..."
-    openssl req -new -x509 -nodes -days 365 -subj "/CN=uaa-127-0-0-1.nip.io" \
+    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP ${kind_gateway_ip})..."
+    cat > "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" <<EOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = req_ext
+x509_extensions = v3_ca
+
+[dn]
+CN = uaa-127-0-0-1.nip.io
+
+[req_ext]
+subjectAltName = @alt_names
+
+[v3_ca]
+subjectAltName = @alt_names
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+
+[alt_names]
+DNS.1 = uaa-127-0-0-1.nip.io
+DNS.2 = localhost
+IP.1 = 127.0.0.1
+IP.2 = ${kind_gateway_ip}
+EOF
+    
+    openssl req -new -x509 -nodes -days 365 \
+      -config "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" \
       -keyout "${TEMPLATES_DIR}/uaa-cert/uaa.key" \
       -out "${TEMPLATES_DIR}/uaa-cert/uaa.crt"
   fi
@@ -146,13 +178,59 @@ function start_uaa_docker() {
   exit 1
 }
 
+function prepare_uaa_oidc_config() {
+  echo "Preparing UAA OIDC configuration for Kubernetes API server..."
+  
+  # Create directory for OIDC certificates
+  mkdir -p /tmp/uaa-oidc
+  
+  # Copy UAA SSL certificate for K8s API server to trust
+  cp "${TEMPLATES_DIR}/uaa-cert/uaa.crt" /tmp/uaa-oidc/uaa-ca.crt
+  
+  echo "UAA OIDC configuration prepared with CA certificate."
+}
+
+function connect_uaa_to_kind_network() {
+  echo "Connecting UAA containers to kind network..."
+  
+  # Ensure kind network exists
+  if ! docker network inspect kind > /dev/null 2>&1; then
+    echo "ERROR: kind network does not exist. Create kind cluster first."
+    exit 1
+  fi
+  
+  # Connect nginx-ssl to kind network (this is what K8s API server will access)
+  if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
+    docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
+  fi
+  
+  # Connect UAA container as well for good measure
+  if docker ps -q -f name=uaa > /dev/null 2>&1; then
+    docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
+  fi
+  
+  # Get the nginx-ssl IP on kind network (should be close to gateway IP 172.19.0.1)
+  local nginx_ip
+  nginx_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{if eq .NetworkID "'$(docker network inspect kind -f '{{.Id}}')'}}{{.IPAddress}}{{end}}{{end}}' nginx-ssl)
+  echo "nginx-ssl accessible on kind network at: ${nginx_ip}"
+}
+
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
+    prepare_uaa_oidc_config
+    
+    # Use static kind network gateway IP for UAA hostname resolution
+    local kind_gateway_ip="172.19.0.1"
+    
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  extraMounts:
+  - containerPath: /etc/uaa-oidc
+    hostPath: /tmp/uaa-oidc
+    readOnly: true
   extraPortMappings:
   - containerPort: 32080
     hostPort: 80
@@ -164,7 +242,17 @@ nodes:
   - |
     kind: ClusterConfiguration
     apiServer:
+      extraVolumes:
+        - name: uaa-oidc
+          hostPath: /etc/uaa-oidc
+          mountPath: /etc/uaa-oidc
+          readOnly: true
       extraArgs:
+        oidc-issuer-url: https://${kind_gateway_ip}:8443/uaa/oauth/token
+        oidc-client-id: cf
+        oidc-username-claim: user_name
+        oidc-username-prefix: "uaa:"
+        oidc-ca-file: /etc/uaa-oidc/uaa-ca.crt
         "enable-admission-plugins": "NodeRestriction"
     controllerManager:
       extraArgs:
@@ -172,6 +260,11 @@ nodes:
     scheduler:
       extraArgs:
         "bind-address": "0.0.0.0"
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-ip: "::"
   - |
     kind: KubeletConfiguration
     cgroupDriver: systemd
@@ -181,6 +274,13 @@ containerdConfigPatches:
     endpoint = ["http://host.docker.internal:5001"]
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
+    
+    # Connect UAA containers to kind network
+    connect_uaa_to_kind_network
+    
+    # Add UAA hostname to /etc/hosts in kind control plane node
+    echo "Configuring kind node /etc/hosts with UAA gateway IP..."
+    docker exec "${CLUSTER_NAME}-control-plane" bash -c "echo '${kind_gateway_ip} uaa-127-0-0-1.nip.io' >> /etc/hosts"
     
     kubectl apply -f - <<EOF
 apiVersion: v1
@@ -234,12 +334,37 @@ function configure_korifi_for_uaa() {
   echo "Korifi UAA configuration completed!"
 }
 
+function configure_uaa_rbac() {
+  echo "Configuring RBAC for UAA admin user..."
+  
+  kubectl apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    cloudfoundry.org/propagate-cf-role: "true"
+  name: uaa-admin-binding
+  namespace: cf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: korifi-controllers-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: "uaa:admin"
+EOF
+
+  echo "RBAC configuration completed!"
+}
+
 function main() {
   parse_cmdline_args "$@"
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
   configure_korifi_for_uaa
+  configure_uaa_rbac
 
   echo ""
   echo "✅ Korifi with UAA deployment completed successfully!"

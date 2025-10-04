@@ -6,16 +6,6 @@ uaa:
 
 LOGIN_SECRET: loginsecret
 
-# Spring Boot SSL Configuration
-server:
-  port: 8443
-  ssl:
-    enabled: true
-    key-store: /tmp/uaa-cert/uaa_keystore.p12
-    key-store-password: 'k0*l*s3cur1tyr0ck$'
-    key-store-type: PKCS12
-    key-alias: uaa_ssl_cert
-
 database:
   maxactive: 100
   maxidle: 10
