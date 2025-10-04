@@ -31,11 +31,7 @@ make build
 make install
 ```
 
-Or use the install script:
 
-```bash
-./scripts/install.sh
-```
 
 ## Usage
 
@@ -74,11 +70,17 @@ make test
 
 ```
 ├── cmd/                    # Command implementations
-├── pkg/                    # Shared packages  
-├── internal/               # Internal packages
-├── scripts/                # Build and deployment scripts
+├── integration/            # Integration tests
+├── templates/              # Kubernetes deployment templates
+│   ├── korifi_config.yaml  # UAA-enabled Korifi configuration
+│   ├── uaa-config-updated.yaml # UAA server configuration with embedded SAML
+│   ├── uaa-deployment-fixed.yaml # UAA deployment manifest
+│   ├── uaa-httproute.yaml  # UAA HTTP routing configuration
+│   └── localregistry-docker-registry.yaml # Local Docker registry setup
+├── scripts/                # Deployment and build scripts
+│   └── deploy-korifi-stable.sh # Complete Korifi+UAA deployment script
 ├── main.go                 # Plugin entry point
-└── Makefile               # Build targets
+└── Makefile               # Build and deployment targets
 ```
 
 ### Development Environment
@@ -89,24 +91,44 @@ This project includes a complete Korifi development environment with UAA support
 # Deploy Korifi with UAA on kind cluster
 make deploy-korifi
 
+# Deploy with debugging enabled
+make deploy-korifi-debug
+
 # Clean up
 make clean-korifi
 ```
 
+#### Key Deployment Files
+
+- **`scripts/deploy-korifi-stable.sh`**: Main deployment script that orchestrates the entire setup
+- **`templates/uaa-config-updated.yaml`**: UAA configuration with embedded SAML certificates (valid until 2035)
+- **`templates/uaa-deployment-fixed.yaml`**: UAA server deployment with optimized startup
+- **`templates/korifi_config.yaml`**: Korifi configuration with UAA integration enabled
+- **`templates/localregistry-docker-registry.yaml`**: Local Docker registry for kpack builds
+
+#### Deployment Process
+
+1. **Cluster Setup**: Creates kind cluster and local Docker registry
+2. **Dependencies**: Installs cert-manager, Gateway API, Envoy Gateway, and kpack
+3. **UAA Deployment**: Deploys UAA server with pre-configured SAML (30 second startup)
+4. **Korifi Deployment**: Installs Korifi v0.16.0 with UAA integration enabled
+5. **Networking**: Configures Gateway API routes for both services
+
 #### UAA Configuration
 
-The Korifi deployment now includes UAA (User Account and Authentication) server for proper Cloud Foundry authentication:
+The Korifi deployment includes UAA (User Account and Authentication) server for proper Cloud Foundry authentication:
 
-- **UAA Endpoint**: http://localhost:30080/uaa
-- **API Endpoint**: http://localhost:30000 (proxied through nginx)
+- **UAA Endpoint**: http://uaa-127-0-0-1.nip.io/uaa
+- **API Endpoint**: https://localhost:443 (with Gateway API/Envoy Gateway)
 - **Default Admin User**: admin/admin
-- **Database**: In-memory HSQLDB (no persistence required for development)
+- **SAML Configuration**: Embedded certificates (valid until 2035)
+- **Fast Startup**: 30 seconds deployment time
 
 #### Testing Authentication
 
 ```bash
 # Test login with admin credentials
-echo -e "admin\nadmin" | CF_TRACE=true cf login -a http://localhost:30000
+echo -e "admin\nadmin" | CF_TRACE=true cf login -a https://localhost:443
 
 # Verify authentication
 cf auth
@@ -115,10 +137,12 @@ cf auth
 #### Architecture
 
 The UAA integration includes:
-- UAA server deployed in `uaa-system` namespace
-- nginx proxy in `korifi` namespace that overrides the `/v3/info` endpoint
-- Korifi configured with experimental UAA mode enabled
-- In-memory database for development simplicity
+- **UAA Server**: Deployed in `uaa-system` namespace with template-based configuration
+- **Gateway API**: Using Envoy Gateway for traffic routing to both Korifi and UAA
+- **SAML Support**: Pre-configured with embedded SAML certificates for immediate use
+- **Local Registry**: Docker registry for kpack builds at `localregistry-docker-registry.default.svc.cluster.local:30050`
+- **Korifi Integration**: Experimental UAA mode enabled with proper authentication flow
+- **Template-Based Deployment**: All components deployed via Kubernetes manifests in `templates/` directory
 
 ## Contributing
 

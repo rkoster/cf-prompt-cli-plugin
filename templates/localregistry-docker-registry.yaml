@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: localregistry-docker-registry
+  namespace: default
+spec:
+  type: NodePort
+  ports:
+  - port: 5000
+    targetPort: 5000
+    nodePort: 30050
+    name: registry
+  selector:
+    app: localregistry-docker-registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: localregistry-docker-registry
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: localregistry-docker-registry
+  template:
+    metadata:
+      labels:
+        app: localregistry-docker-registry
+    spec:
+      containers:
+      - name: registry
+        image: registry:2
+        ports:
+        - containerPort: 5000
+        env:
+        - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+          value: /var/lib/registry
+        volumeMounts:
+        - name: registry-storage
+          mountPath: /var/lib/registry
+      volumes:
+      - name: registry-storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: image-registry-credentials
+  namespace: default
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJsb2NhbHJlZ2lzdHJ5LWRvY2tlci1yZWdpc3RyeS5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsOjMwMDUwIjp7InVzZXJuYW1lIjoiIiwicGFzc3dvcmQiOiIiLCJhdXRoIjoiIn19fQ==
