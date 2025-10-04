@@ -105,13 +105,75 @@ function start_uaa_docker() {
   exit 1
 }
 
+function prepare_uaa_oidc_config() {
+  echo "Preparing UAA OIDC configuration for kind cluster..."
+  
+  mkdir -p /tmp/uaa-certs
+  
+  cat > /tmp/uaa-certs/jwt-private-key.pem <<'EOF'
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC86TXUwHix62GR
+WueivzokOU4s9ymEGfehe2BTbiDquv9xW7qaiKp3kvAcjRJ6GOw/bbtIypE46As4
+8F+E9pDGLMY0lFD7KOSgBmA9dYsYw+RkxVPNC9BrgjWKExvAUF+5R116dDT8kxud
+SnAMafXQ8ayRMg4EbRPJjw6Op9lyyqzw4I0cWP0d3mg/6WTXT/R6L2W2z+M0g6tD
+v00JAq/sZqVfEGxruo1K4FFgmWEOLKX0W6OXk/uHDq3r99Rfri5JsrlNPY0dp0Db
+678J/eS/BlQKkAFczWzaiFHjXlOMawBhoWNgv4iKdy0GOUYVVl13KIsj10RzhW3Y
+pOpIKNrhAgMBAAECggEACCuj/uQmNDfEfAds/k58AsYRugMkogiHe838wA8C0HQv
+CSWZAAcKLGrIBMwbMPmz+hhSYdcVCduLZLaMwxDw+QlFt0904zAFF2C/N9lGH1eV
+oMAiHDu3E3dJvoOODzbKtRY/lkTBZ+0q5BYsm3TXw2Y4ev0puwpGsVCFJilfT8Ye
+NDxk3geKv+XUN8e1IYxUokAuELJFESGN8dAxVVMhf1opGtEOy+L/+fCXHZTvE3u3
+8f9PsmOqmD+xr1BSQP04duTAgd5frtwXTXPvK3QlG2GSDzm/uAO84FAfYBcj84NP
+AHzKigXlhshcDk5rRGCGWk0UYKrlkvonJik64UA0swKBgQDwkwxvbniAkMWzL/mB
+ZQvmWTatubriQ2F+ol3l8py878bk2jAd2HDuhQZ3YPrSilG2JZo5LxRadcz861TB
+L64W6AbUAlUCsK2/qmjWTVgpK6RYje5efr0YVWTGfiXnsFj6KKSe70yxk9lxRnzH
+SVsYDyyWM3Joe9JhBwPRoAeiAwKBgQDJBh+FMB7TCK+/+wkjxfJksGjoUZZbcn/1
+3adiWCa+g8/8Cgg3XoQzzJ5fpnkm1w34uro30DGB6oe8vioAJeMmOmjj7U6MNf4k
+Kgn3G3NUv7Y1CVDDcpeK7kQ4yEucEwyaoTr+FNXpXx8ropybcgAsLbyVixSAZhcE
+qX6urEbMSwKBgCOFwwdNK5PoTJjp05Csp/YqZC2AyDySsHmvZegHS+eGDDtMkGBH
+zl0Z3VuRQVgHPouDv+MDtaCp1kveP9SKwsz1E9UIRx8vkWhEtFg4cXUa0ZiV1IW1
+dxx5t3irtdMhMfI2QCCLuypZZ3kXbGNMzJuf2fiPviv5ZJYZIBI67AWbAoGAQO0g
+WxUar5Bbq0b6QbqaOlkb2QUY6fpGR/PKLyJHiTrrfv0CgFefnVdWQ5ByCtBkq9Qr
+dwFgLBTCuHw29otGHT+6RvuLZg++QJHvXAdaraGpyOF0W1v0hCPGlwxiF0uzw3GV
+qyCxoklduOsxZ6dfVOWExkwAWCQhBRl1WBc+WpcCgYA1zFDPzM+LDcqGJdp+XH7c
+yHhqAnBgaopRq8pbgp4zvC9SMUIX8Hd/AGqDNQO7FjMfRFrTcrWdIb2W1EWxI3j8
+3D8DCRZNPZAoVG1BQcjRsgtPrFvErxFEBAKXxiuIXUw96RiBEX6xNmD4I10EyGK2
+Odnbw1oo+AIMC08hBCRbZg==
+-----END PRIVATE KEY-----
+EOF
+
+  openssl rsa -in /tmp/uaa-certs/jwt-private-key.pem -pubout -out /tmp/uaa-certs/jwt-public-key.pem 2>/dev/null
+  
+  echo "UAA OIDC configuration prepared."
+}
+
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
+    prepare_uaa_oidc_config
+    
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  extraMounts:
+  - containerPath: /etc/uaa-certs
+    hostPath: /tmp/uaa-certs
+    readOnly: true
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraVolumes:
+        - name: uaa-certs
+          hostPath: /etc/uaa-certs
+          mountPath: /etc/uaa-certs
+          readOnly: true
+      extraArgs:
+        oidc-issuer-url: http://uaa-127-0-0-1.nip.io:8080/uaa/oauth/token
+        oidc-client-id: cf
+        oidc-username-claim: user_name
+        oidc-username-prefix: "uaa:"
+        oidc-signing-algs: "RS256"
   extraPortMappings:
   - containerPort: 32080
     hostPort: 80
@@ -193,23 +255,56 @@ function configure_korifi_for_uaa() {
   echo "Korifi UAA configuration completed!"
 }
 
+function configure_uaa_rbac() {
+  echo "Configuring RBAC for UAA admin user..."
+  
+  kubectl apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    cloudfoundry.org/propagate-cf-role: "true"
+  name: uaa-admin-binding
+  namespace: cf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: korifi-controllers-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: "uaa:admin"
+EOF
+
+  echo "RBAC configuration completed!"
+}
+
 function main() {
   parse_cmdline_args "$@"
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
   configure_korifi_for_uaa
+  configure_uaa_rbac
 
   echo ""
   echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
   echo "UAA Access:"
-  echo "  - UAA URL: http://uaa-127-0-0-1.nip.io/uaa"
+  echo "  - UAA URL: http://uaa-127-0-0-1.nip.io:8080/uaa"
   echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"
   echo "  - API URL: https://localhost:443"
-  echo "  - Test login: echo -e \"admin\\nadmin_secret\" | CF_TRACE=true cf login -a https://localhost:443 --skip-ssl-validation"
+  echo "  - Test login: echo admin_secret | cf login -a https://localhost:443 --skip-ssl-validation -u admin"
+  echo ""
+  echo "OIDC Configuration:"
+  echo "  - Issuer URL: http://uaa-127-0-0-1.nip.io:8080/uaa/oauth/token"
+  echo "  - Username prefix: uaa:"
+  echo "  - Admin Kubernetes user: uaa:admin"
+  echo ""
+  echo "Note: The Kubernetes API server has been configured with OIDC authentication"
+  echo "to validate UAA JWT tokens. This resolves the 'Invalid Auth Token' error."
   echo ""
 }
 

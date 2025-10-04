@@ -120,15 +120,30 @@ The Korifi deployment includes UAA (User Account and Authentication) server for 
 
 - **UAA Endpoint**: http://uaa-127-0-0-1.nip.io/uaa
 - **API Endpoint**: https://localhost:443 (with Gateway API/Envoy Gateway)
-- **Default Admin User**: admin/admin
+- **Default Admin User**: admin/admin_secret
 - **SAML Configuration**: Embedded certificates (valid until 2035)
 - **Fast Startup**: 30 seconds deployment time
+- **OIDC Integration**: Kubernetes API server configured with OIDC to validate UAA JWT tokens
+
+#### JWT Token Validation
+
+The deployment script automatically configures the Kubernetes API server with OIDC authentication parameters to validate UAA-issued JWT tokens. This resolves the "Invalid Auth Token" error by:
+
+1. Extracting the JWT signing public key from the UAA configuration
+2. Configuring the kind cluster's API server with OIDC parameters:
+   - Issuer URL: `http://uaa-127-0-0-1.nip.io:8080/uaa/oauth/token`
+   - Client ID: `cf`
+   - Username claim: `user_name`
+   - Username prefix: `uaa:`
+3. Creating RBAC bindings for the UAA admin user (`uaa:admin`)
+
+This allows Korifi to validate JWT tokens from UAA through the Kubernetes TokenReview API.
 
 #### Testing Authentication
 
 ```bash
 # Test login with admin credentials
-echo -e "admin\nadmin" | CF_TRACE=true cf login -a https://localhost:443
+echo admin_secret | cf login -a https://localhost:443 --skip-ssl-validation -u admin
 
 # Verify authentication
 cf auth
