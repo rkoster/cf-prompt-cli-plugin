@@ -159,6 +159,13 @@ nodes:
   - containerPath: /etc/uaa-certs
     hostPath: /tmp/uaa-certs
     readOnly: true
+  extraPortMappings:
+  - containerPort: 32080
+    hostPort: 80
+    protocol: TCP
+  - containerPort: 32443
+    hostPort: 443
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
@@ -174,18 +181,6 @@ nodes:
         oidc-username-claim: user_name
         oidc-username-prefix: "uaa:"
         oidc-signing-algs: "RS256"
-  extraPortMappings:
-  - containerPort: 32080
-    hostPort: 80
-    protocol: TCP
-  - containerPort: 32443
-    hostPort: 443
-    protocol: TCP
-  kubeadmConfigPatches:
-  - |
-    kind: ClusterConfiguration
-    apiServer:
-      extraArgs:
         "enable-admission-plugins": "NodeRestriction"
     controllerManager:
       extraArgs:
