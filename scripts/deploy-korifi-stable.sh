@@ -82,21 +82,52 @@ function start_uaa_docker() {
   docker stop uaa nginx-ssl 2>/dev/null || true
   docker rm uaa nginx-ssl 2>/dev/null || true
   
+  # Get kind network gateway IP (static IP for UAA access from kind cluster)
+  local kind_gateway_ip="172.19.0.1"
+  
   # Ensure SSL certificate directory exists
   mkdir -p "${TEMPLATES_DIR}/uaa-cert"
   
-  # Generate SSL certificate if it doesn't exist (only need crt/key for nginx)
+  # Generate SSL certificate with SAN including both hostname and gateway IP
   if [ ! -f "${TEMPLATES_DIR}/uaa-cert/uaa.crt" ]; then
-    echo "Generating SSL certificate for UAA..."
-    openssl req -new -x509 -nodes -days 365 -subj "/CN=uaa-127-0-0-1.nip.io" \
+    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP 172.19.0.1)..."
+    cat > "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" <<EOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = req_ext
+x509_extensions = v3_ca
+
+[dn]
+CN = 172.19.0.1
+
+[req_ext]
+subjectAltName = @alt_names
+
+[v3_ca]
+subjectAltName = @alt_names
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = 172.19.0.1
+EOF
+    
+    openssl req -new -x509 -nodes -days 365 \
+      -config "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" \
       -keyout "${TEMPLATES_DIR}/uaa-cert/uaa.key" \
       -out "${TEMPLATES_DIR}/uaa-cert/uaa.crt"
   fi
   
-  # Start UAA on HTTP only (no SSL complexity)
+  # Start UAA on HTTP only (nginx will handle SSL termination)
   docker run -d \
     --name uaa \
-    --hostname uaa-127-0-0-1.nip.io \
+    --hostname uaa-172-19-0-1.local \
     -p 8080:8080 \
     -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
     -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
@@ -130,14 +161,14 @@ function start_uaa_docker() {
     --add-host=host.docker.internal:host-gateway \
     nginx:alpine
   
-  # Wait for HTTPS to be ready
-  echo "Waiting for nginx HTTPS proxy to be ready..."
+  # Wait for HTTPS to be ready at gateway IP
+  echo "Waiting for nginx HTTPS proxy to be ready at 172.19.0.1:8443..."
   for i in {1..15}; do
-    if curl -k -s https://localhost:8443/login > /dev/null 2>&1; then
-      echo "UAA is ready on HTTPS via nginx proxy!"
+    if curl -k -s https://172.19.0.1:8443/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTPS at https://172.19.0.1:8443!"
       return 0
     fi
-    echo "Waiting for nginx SSL proxy (attempt $i/15)..."
+    echo "Waiting for UAA HTTPS access (attempt $i/15)..."
     sleep 2
   done
   
@@ -146,13 +177,53 @@ function start_uaa_docker() {
   exit 1
 }
 
+function prepare_uaa_oidc_config() {
+  echo "Preparing UAA OIDC configuration for Kubernetes API server..."
+  
+  # Create directory for OIDC certificates
+  mkdir -p /tmp/uaa-oidc
+  
+  # Copy UAA SSL certificate for K8s API server to trust
+  cp "${TEMPLATES_DIR}/uaa-cert/uaa.crt" /tmp/uaa-oidc/uaa-ca.crt
+  
+  echo "UAA OIDC configuration prepared with CA certificate."
+}
+
+function connect_uaa_to_kind_network() {
+  echo "Connecting UAA containers to kind network for 172.19.0.1 access..."
+  
+  # Ensure kind network exists
+  if ! docker network inspect kind > /dev/null 2>&1; then
+    echo "ERROR: kind network does not exist. Create kind cluster first."
+    exit 1
+  fi
+  
+  # Connect nginx-ssl to kind network (this provides the 172.19.0.1:8443 endpoint)
+  if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
+    docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
+  fi
+  
+  # Connect UAA container as well
+  if docker ps -q -f name=uaa > /dev/null 2>&1; then
+    docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
+  fi
+  
+  echo "UAA accessible on kind network at 172.19.0.1:8443 (nginx-ssl proxy)"
+}
+
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
+    prepare_uaa_oidc_config
+    
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  extraMounts:
+  - containerPath: /etc/uaa-oidc
+    hostPath: /tmp/uaa-oidc
+    readOnly: true
   extraPortMappings:
   - containerPort: 32080
     hostPort: 80
@@ -164,7 +235,17 @@ nodes:
   - |
     kind: ClusterConfiguration
     apiServer:
+      extraVolumes:
+        - name: uaa-oidc
+          hostPath: /etc/uaa-oidc
+          mountPath: /etc/uaa-oidc
+          readOnly: true
       extraArgs:
+        oidc-issuer-url: https://172.19.0.1:8443/uaa
+        oidc-client-id: cf
+        oidc-username-claim: user_name
+        oidc-username-prefix: "uaa:"
+        oidc-ca-file: /etc/uaa-oidc/uaa-ca.crt
         "enable-admission-plugins": "NodeRestriction"
     controllerManager:
       extraArgs:
@@ -172,6 +253,11 @@ nodes:
     scheduler:
       extraArgs:
         "bind-address": "0.0.0.0"
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-ip: "::"
   - |
     kind: KubeletConfiguration
     cgroupDriver: systemd
@@ -182,22 +268,8 @@ containerdConfigPatches:
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
     
-    kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns-custom
-  namespace: kube-system
-data:
-  uaa.override: |
-    rewrite stop {
-      name regex uaa-127-0-0-1.nip.io host.docker.internal
-      answer name host.docker.internal uaa-127-0-0-1.nip.io
-    }
-EOF
-    
-    kubectl -n kube-system rollout restart deployment/coredns
-    kubectl -n kube-system rollout status deployment/coredns --timeout=2m
+    # Connect UAA containers to kind network for direct IP access
+    connect_uaa_to_kind_network
   fi
 
   kind export kubeconfig --name "$CLUSTER_NAME"
@@ -227,11 +299,36 @@ function deploy_korifi() {
 }
 
 function configure_korifi_for_uaa() {
-  echo "Configuring Korifi to use Docker UAA..."
+  echo "Configuring Korifi to use Docker UAA at 172.19.0.1:8443..."
   
+  # Apply the simplified UAA configuration (no routing needed)
   kubectl apply -f "$TEMPLATES_DIR/uaa-httproute.yaml"
   
-  echo "Korifi UAA configuration completed!"
+  echo "Korifi UAA configuration completed! UAA accessible at https://172.19.0.1:8443/"
+}
+
+function configure_uaa_rbac() {
+  echo "Configuring RBAC for UAA admin user..."
+  
+  kubectl apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    cloudfoundry.org/propagate-cf-role: "true"
+  name: uaa-admin-binding
+  namespace: cf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: korifi-controllers-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: "uaa:admin"
+EOF
+
+  echo "RBAC configuration completed!"
 }
 
 function main() {
@@ -240,12 +337,13 @@ function main() {
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
   configure_korifi_for_uaa
+  configure_uaa_rbac
 
   echo ""
   echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
   echo "UAA Access:"
-  echo "  - UAA URL: https://uaa-127-0-0-1.nip.io:8443/uaa"
+  echo "  - UAA URL: https://172.19.0.1:8443/uaa"
   echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"
