@@ -1,0 +1,240 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uaa-admin-client-credentials
+  namespace: uaa-system
+  labels:
+    app.kubernetes.io/component: authorization_server
+    app.kubernetes.io/instance: uaa-standalone
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: uaa
+    app.kubernetes.io/part-of: uaa
+    app.kubernetes.io/version: 77.14.0
+type: Opaque
+stringData:
+  admin_client_credentials.yml: |
+    admin_client_secret: admin-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uaa-jwt-policy-signing-keys
+  namespace: uaa-system
+  labels:
+    app.kubernetes.io/component: authorization_server
+    app.kubernetes.io/instance: uaa-standalone
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: uaa
+    app.kubernetes.io/part-of: uaa
+    app.kubernetes.io/version: 77.14.0
+type: Opaque
+stringData:
+  jwt_policy_signing_keys.yml: |
+    jwt:
+      policy:
+        active_key_id: uaa-jwt-key-1
+        keys:
+          uaa-jwt-key-1:
+            signing-key: |
+              -----BEGIN RSA PRIVATE KEY-----
+              MIIEpAIBAAKCAQEA2Z3QX0BTLS5Z1DnWAA2nWoLXuBEKs6GwWQKa3DEHEOKhBmOO
+              2aNG7hhpI3LXrFjSBdGcQr2p5xN5qlI7cMtMpgPJa5sP9VJdWePQeRY2Q8Y5Q5FZ
+              dI3Z5E2QHBG5sG2lW3B2G8WJz6Y1C5Z2LPL1i8qQ5P8YJ5SQK5oRLu5I7K2w6P3Y
+              V8ZJtU3K7E5x8F5c3RQRxB5GJj1Q8W7E8ePF9SgP1x9Y8pR2QyP7cJ8z8qC5Kh8L
+              vJ7QLYm7n8P8FJ9vU8B8s3W8K3j9X5qS7G3L2YGpJ6F8c8qHY9z8vB8m8E3F8n7G
+              -----END RSA PRIVATE KEY-----
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: encryption-keys
+  namespace: uaa-system
+  labels:
+    app.kubernetes.io/component: authorization_server
+    app.kubernetes.io/instance: uaa-standalone
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: uaa
+    app.kubernetes.io/part-of: uaa
+    app.kubernetes.io/version: 77.14.0
+type: Opaque
+stringData:
+  encryption_keys.yml: |
+    encryption:
+      active_key_label: uaa-encryption-key-1
+      encryption_keys:
+        - label: uaa-encryption-key-1
+          passphrase: uaa-encryption-passphrase
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: uaa
+  namespace: uaa-system
+  labels:
+    app.kubernetes.io/component: authorization_server
+    app.kubernetes.io/instance: uaa-standalone
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: uaa
+    app.kubernetes.io/part-of: uaa
+    app.kubernetes.io/version: 77.14.0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uaa
+  namespace: uaa-system
+  labels:
+    app.kubernetes.io/component: authorization_server
+    app.kubernetes.io/instance: uaa-standalone
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: uaa
+    app.kubernetes.io/part-of: uaa
+    app.kubernetes.io/version: 77.14.0
+spec:
+  ports:
+  - name: http-uaa
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: uaa-deployment
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uaa
+  namespace: uaa-system
+  labels:
+    app.kubernetes.io/component: authorization_server
+    app.kubernetes.io/instance: uaa-standalone
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: uaa
+    app.kubernetes.io/part-of: uaa
+    app.kubernetes.io/version: 77.14.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: uaa-deployment
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9102"
+        prometheus.io/scrape: "true"
+      labels:
+        app: uaa-deployment
+        app.kubernetes.io/component: authorization_server
+        app.kubernetes.io/instance: uaa-standalone
+        app.kubernetes.io/managed-by: kubectl
+        app.kubernetes.io/name: uaa
+        app.kubernetes.io/part-of: uaa
+        app.kubernetes.io/version: 77.14.0
+      namespace: uaa-system
+    spec:
+      containers:
+      - env:
+         - name: BPL_TOMCAT_ACCESS_LOGGING
+           value: "y"
+         - name: JAVA_OPTS
+           value: >-
+             -Dspring_profiles=hsqldb
+             -Djava.security.egd=file:/dev/./urandom
+             -Dlogging.config=/etc/config/log4j2.properties
+             -Dlog4j.configurationFile=/etc/config/log4j2.properties
+             -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config
+             -DSECRETS_DIR=/etc/secrets
+             -Dstatsd.enabled=true
+             -Dservlet.session-store=database
+        image: cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880
+        livenessProbe:
+          failureThreshold: 25
+          httpGet:
+            path: /healthz
+            port: http-uaa
+          initialDelaySeconds: 60
+          periodSeconds: 15
+        name: uaa
+        ports:
+        - containerPort: 8080
+          name: http-uaa
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: http-uaa
+          initialDelaySeconds: 90
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 2000Mi
+          requests:
+            cpu: 50m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /etc/config
+          name: uaa-config
+        - mountPath: /etc/secrets/smtp_credentials.yml
+          name: smtp-credentials-file
+          readOnly: true
+          subPath: smtp_credentials.yml
+        - mountPath: /etc/secrets/database_credentials.yml
+          name: database-credentials-file
+          readOnly: true
+          subPath: database_credentials.yml
+        - mountPath: /etc/secrets/admin_client_credentials.yml
+          name: admin-client-credentials-file
+          readOnly: true
+          subPath: admin_client_credentials.yml
+        - mountPath: /etc/secrets/jwt_policy_signing_keys.yml
+          name: jwt-policy-signing-keys-file
+          readOnly: true
+          subPath: jwt_policy_signing_keys.yml
+        - mountPath: /etc/secrets/encryption_keys.yml
+          name: encryption-keys-file
+          readOnly: true
+          subPath: encryption_keys.yml
+      - args:
+        - --statsd.listen-udp=:8125
+        image: cloudfoundry/statsd_exporter:v0.15.0@sha256:10a64dc4ad0a3e3fe88372f0481dea5c02595c38d168617836a99a649d3ac407
+        imagePullPolicy: Always
+        name: statsd-exporter
+        ports:
+        - containerPort: 9102
+          name: metrics-uaa
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 10m
+            memory: 10Mi
+
+      serviceAccountName: uaa
+      volumes:
+      - configMap:
+          name: uaa-config
+        name: uaa-config
+      - name: smtp-credentials-file
+        secret:
+          optional: true
+          secretName: uaa-smtp-credentials
+      - name: database-credentials-file
+        secret:
+          optional: true
+          secretName: uaa-database-credentials
+      - name: admin-client-credentials-file
+        secret:
+          secretName: uaa-admin-client-credentials
+      - name: jwt-policy-signing-keys-file
+        secret:
+          secretName: uaa-jwt-policy-signing-keys
+      - name: encryption-keys-file
+        secret:
+          optional: false
+          secretName: encryption-keys

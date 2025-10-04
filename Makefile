@@ -1,4 +1,4 @@
-.PHONY: deploy-korifi deploy-korifi-debug clean-korifi build install uninstall test integration-test help
+.PHONY: deploy-korifi deploy-korifi-debug deploy-uaa clean-korifi build install uninstall test integration-test help
 
 # Default cluster name
 CLUSTER_NAME ?= korifi-dev
@@ -15,8 +15,9 @@ help:
 	@echo "  uninstall          - Uninstall the plugin from CF CLI"
 	@echo "  test               - Run unit tests"
 	@echo "  integration-test   - Run integration tests (requires deployed Korifi)"
-	@echo "  deploy-korifi      - Deploy stable Korifi v0.16.0 on kind cluster"
+	@echo "  deploy-korifi      - Deploy stable Korifi v0.16.0 with UAA on kind cluster"
 	@echo "  deploy-korifi-debug - Deploy Korifi with debugging enabled"
+	@echo "  deploy-uaa         - Deploy UAA components only"
 	@echo "  clean-korifi       - Delete the kind cluster"
 	@echo "  help               - Show this help message"
 	@echo ""
@@ -25,13 +26,13 @@ help:
 	@echo ""
 	@echo "UAA Support:"
 	@echo "  The deploy-korifi target now includes UAA deployment with:"
-	@echo "  - In-memory HSQLDB storage"
+	@echo "  - Fast startup (30 seconds) with working SAML configuration"
 	@echo "  - Admin user: admin/admin"
-	@echo "  - API proxy via nginx at http://localhost:30000"
-	@echo "  - UAA direct access at http://localhost:30080/uaa"
+	@echo "  - UAA URL: http://uaa-127-0-0-1.nip.io/uaa"
+	@echo "  - Integrated with Korifi authentication"
 	@echo ""
 	@echo "Test login:"
-	@echo "  echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a http://localhost:30000"
+	@echo "  echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a https://localhost:443"
 
 # Build the plugin
 build:
@@ -67,15 +68,15 @@ clean:
 	@echo "Cleaning build artifacts..."
 	rm -f $(PLUGIN_BINARY)
 
-# Deploy Korifi using stable release
+# Deploy Korifi using stable release with UAA
 deploy-korifi:
-	@echo "Deploying stable Korifi v0.16.0 on kind cluster '$(CLUSTER_NAME)'..."
+	@echo "Deploying stable Korifi v0.16.0 with UAA on kind cluster '$(CLUSTER_NAME)'..."
 	@echo "This may take several minutes..."
 	devbox run -- bash scripts/deploy-korifi-stable.sh $(CLUSTER_NAME)
 
 # Deploy Korifi with debugging
 deploy-korifi-debug:
-	@echo "Deploying stable Korifi v0.16.0 on kind cluster '$(CLUSTER_NAME)' with debugging enabled..."
+	@echo "Deploying stable Korifi v0.16.0 with UAA on kind cluster '$(CLUSTER_NAME)' with debugging enabled..."
 	@echo "This may take several minutes..."
 	devbox run -- bash scripts/deploy-korifi-stable.sh $(CLUSTER_NAME) --debug
 
@@ -83,4 +84,7 @@ deploy-korifi-debug:
 clean-korifi:
 	@echo "Deleting kind cluster '$(CLUSTER_NAME)'..."
 	devbox run -- kind delete cluster --name $(CLUSTER_NAME)
-	@echo "Kind cluster '$(CLUSTER_NAME)' deleted."
+	@echo "Stopping and removing local Docker registry..."
+	devbox run -- docker stop registry 2>/dev/null || true
+	devbox run -- docker rm registry 2>/dev/null || true
+	@echo "Kind cluster '$(CLUSTER_NAME)' and local registry cleaned up."

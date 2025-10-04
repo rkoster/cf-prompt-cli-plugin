@@ -2,17 +2,12 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT_DIR="${ROOT_DIR}"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="${ROOT_DIR}/scripts"
+TEMPLATES_DIR="${ROOT_DIR}/templates"
 KORIFI_VERSION="0.16.0"
 
-LOCAL_DOCKER_REGISTRY_ADDRESS="localregistry-docker-registry.default.svc.cluster.local:30050"
 CLUSTER_NAME=""
-DEBUG="false"
-
-# workaround for https://github.com/carvel-dev/kbld/issues/213
-# kbld fails with git error messages in languages than other english
-export LC_ALL=en_US.UTF-8
 
 function usage_text() {
   cat <<EOF
@@ -22,11 +17,6 @@ Usage:
 flags:
   -v, --verbose
       Verbose output (bash -x).
-
-  -D, --debug
-      Deploy with debugging enabled and wire up ports for remote debugging:
-        localhost:30051-30055 (debug ports)
-
 EOF
   exit 1
 }
@@ -35,10 +25,6 @@ function parse_cmdline_args() {
   while [[ $# -gt 0 ]]; do
     i=$1
     case $i in
-      -D | --debug)
-        DEBUG="true"
-        shift
-        ;;
       -v | --verbose)
         set -x
         shift
@@ -78,8 +64,8 @@ function validate_registry_params() {
 
     echo "None of $registry_env_vars are set. Assuming local registry."
     DOCKER_SERVER="$LOCAL_DOCKER_REGISTRY_ADDRESS"
-    DOCKER_USERNAME="user"
-    DOCKER_PASSWORD="password"
+    DOCKER_USERNAME=""
+    DOCKER_PASSWORD=""
     REPOSITORY_PREFIX="$DOCKER_SERVER/"
     KPACK_BUILDER_REPOSITORY="$DOCKER_SERVER/kpack-builder"
 
@@ -92,168 +78,55 @@ function validate_registry_params() {
 
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
-    kind create cluster --name "$CLUSTER_NAME" --wait 5m --config="$SCRIPT_DIR/assets/kind-config.yaml"
+    cat > /tmp/kind-config.yaml <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 32080
+    hostPort: 80
+    protocol: TCP
+  - containerPort: 32443
+    hostPort: 443
+    protocol: TCP
+EOF
+    kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
   fi
 
   kind export kubeconfig --name "$CLUSTER_NAME"
 }
 
-function ensure_local_registry() {
-  if [[ "$DOCKER_SERVER" != "$LOCAL_DOCKER_REGISTRY_ADDRESS" ]]; then
-    echo "Using custom registry. Skipping local docker registry deployment."
-    return
-  fi
-
-  helm repo add twuni https://helm.twun.io
-  # the htpasswd value below is username: user, password: password encoded using `htpasswd` binary
-  # e.g. `docker run --entrypoint htpasswd httpd:2 -Bbn user password`
-  helm upgrade --install localregistry twuni/docker-registry \
-    --set service.type=NodePort,service.nodePort=30050,service.port=30050 \
-    --set persistence.enabled=true \
-    --set persistence.deleteEnabled=true \
-    --set secrets.htpasswd='user:$2y$05$Ue5dboOfmqk6Say31Sin9uVbHWTl8J1Sgq9QyAEmFQRnq1TPfP1n2'
-
-}
-
-function install_dependencies() {
-  echo "Installing Korifi dependencies (cert-manager, kpack, contour)..."
-  
-  # Install cert-manager
-  echo "Installing cert-manager..."
-  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
-  kubectl wait --for=condition=Available=True deployment -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=5m
-  
-  # Install kpack
-  echo "Installing kpack..."
-  kubectl apply -f https://github.com/buildpacks-community/kpack/releases/download/v0.13.4/release-0.13.4.yaml
-  echo "Waiting for kpack controller to be ready..."
-  kubectl wait --for=condition=Available=True deployment/kpack-controller -n kpack --timeout=5m
-  
-  # Install contour with Gateway API support
-  echo "Installing contour..."
-  kubectl apply -f https://projectcontour.io/quickstart/contour-gateway-provisioner.yaml
-  echo "Waiting for contour gateway provisioner to be ready..."
-  kubectl wait --for=condition=Available=True deployment/contour-gateway-provisioner -n projectcontour --timeout=5m
-}
-
-function configure_contour() {
-  kubectl apply -f - <<EOF
-kind: GatewayClass
-apiVersion: gateway.networking.k8s.io/v1beta1
-metadata:
-  name: contour
-spec:
-  controllerName: projectcontour.io/gateway-controller
-  parametersRef:
-    kind: ContourDeployment
-    group: projectcontour.io
-    name: contour-nodeport-params
-    namespace: projectcontour
-
----
-kind: ContourDeployment
-apiVersion: projectcontour.io/v1alpha1
-metadata:
-  namespace: projectcontour
-  name: contour-nodeport-params
-spec:
-  envoy:
-    networkPublishing:
-      type: NodePortService
-EOF
-}
-
 function deploy_korifi() {
   echo "Deploying Korifi v${KORIFI_VERSION} from stable release..."
 
-  # Download and install the stable helm chart
-  local chart_url="https://github.com/cloudfoundry/korifi/releases/download/v${KORIFI_VERSION}/korifi-${KORIFI_VERSION}.tgz"
+  # Install Korifi using the install YAML
+  kubectl apply -f https://github.com/cloudfoundry/korifi/releases/download/v${KORIFI_VERSION}/install-korifi-kind.yaml
   
-  helm install korifi "$chart_url" \
-    --namespace korifi \
-    --create-namespace \
-    --set=rootNamespace="cf" \
-    --set=adminUserName="cf-admin" \
-    --set=api.apiServer.url="localhost" \
-    --set=defaultAppDomainName="apps-127-0-0-1.nip.io" \
-    --set=generateIngressCertificates="true" \
-    --set=logLevel="debug" \
-    --set=debug="$DEBUG" \
-    --set=stagingRequirements.buildCacheMB="1024" \
-    --set=controllers.taskTTL="5s" \
-    --set=jobTaskRunner.jobTTL="5s" \
-    --set=containerRepositoryPrefix="$REPOSITORY_PREFIX" \
-    --set=kpackImageBuilder.builderRepository="$KPACK_BUILDER_REPOSITORY" \
-    --set=kpackImageBuilder.clusterBuilderName="kind-builder" \
-    --set=networking.gatewayClass="contour" \
-    --set=networking.gatewayPorts.http="32080" \
-    --set=networking.gatewayPorts.https="32443" \
-    --set=experimental.managedServices.enabled="true" \
-    --set=experimental.securityGroups.enabled="true" \
-    --set=experimental.managedServices.trustInsecureBrokers="true" \
-    --set=experimental.uaa.enabled="true" \
-    --set=api.list.defaultPageSize="5000" \
-    --timeout="15m" \
-    --wait
-
+  # Wait for the installation job to complete
+  echo "Waiting for Korifi installation job to complete..."
+  kubectl wait --for=condition=Complete job/install-korifi -n korifi-installer --timeout=15m
+  
+  # Apply our custom UAA-enabled configuration
+  kubectl create configmap korifi-api-config --from-file="$TEMPLATES_DIR/korifi_config.yaml" -n korifi --dry-run=client -o yaml | kubectl apply -f -
+  
+  # Wait for Korifi components to be ready
+  kubectl wait --for=condition=Available=True deployment/korifi-api-deployment -n korifi --timeout=10m
+  kubectl wait --for=condition=Available=True deployment/korifi-controllers-controller-manager -n korifi --timeout=5m
+  
   echo "Korifi deployment completed!"
 }
 
-function create_namespaces() {
-  local security_policy
-
-  security_policy="restricted"
-
-  if [[ "$DEBUG" == "true" ]]; then
-    security_policy="privileged"
-  fi
-
-  for ns in cf korifi; do
-    cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Namespace
-metadata:
-  labels:
-    pod-security.kubernetes.io/audit: $security_policy
-    pod-security.kubernetes.io/enforce: $security_policy
-  name: $ns
-EOF
-  done
-}
-
-function create_registry_secret() {
-  local docker_server="$DOCKER_SERVER"
-
-  # docker hub is very picky about its server name
-  if [ "$docker_server" == "" ] || [ "$docker_server" == "index.docker.io" ]; then
-    docker_server="https://index.docker.io/v1/"
-  fi
-
-  kubectl delete -n cf secret image-registry-credentials --ignore-not-found
-  kubectl create secret -n cf docker-registry image-registry-credentials \
-    --docker-server="$docker_server" \
-    --docker-username="$DOCKER_USERNAME" \
-    --docker-password="$DOCKER_PASSWORD"
-}
-
-function create_cluster_builder() {
-  echo "Creating kpack cluster builder..."
-  (
-    export BUILDER_TAG="$KPACK_BUILDER_REPOSITORY"
-    envsubst <"$SCRIPT_DIR/assets/templates/kind-builder.yml" | kubectl apply -f -
-  )
-  echo "Waiting for cluster builder to be ready..."
-  kubectl wait --for=condition=ready clusterbuilder kind-builder --timeout=15m
-}
-
-function create_cf_admin_user() {
-  echo "Creating cf-admin user with client certificates..."
-  "$SCRIPT_DIR/create-new-user.sh" cf-admin
-}
-
 function deploy_uaa() {
-  echo "Deploying UAA..."
-  kubectl apply -f "$SCRIPT_DIR/assets/uaa/uaa-deployment.yml"
+  echo "Deploying UAA using templates..."
+  
+  # Create UAA namespace
+  kubectl create namespace uaa-system --dry-run=client -o yaml | kubectl apply -f -
+  
+  # Deploy UAA components using our templates
+  kubectl apply -f "$TEMPLATES_DIR/uaa-config-updated.yaml"
+  kubectl apply -f "$TEMPLATES_DIR/uaa-deployment-fixed.yaml"
+  kubectl apply -f "$TEMPLATES_DIR/uaa-httproute.yaml"
   
   # Wait for UAA to be ready
   echo "Waiting for UAA to be ready..."
@@ -262,40 +135,23 @@ function deploy_uaa() {
   echo "UAA deployment completed!"
 }
 
-function deploy_nginx_proxy() {
-  echo "Deploying nginx proxy..."
-  kubectl apply -f "$SCRIPT_DIR/assets/uaa/nginx-proxy.yml"
-  
-  # Wait for nginx proxy to be ready
-  echo "Waiting for nginx proxy to be ready..."
-  kubectl wait --for=condition=Available=True deployment/nginx-proxy -n korifi --timeout=5m
-  
-  echo "Nginx proxy deployment completed!"
-}
-
 function main() {
   parse_cmdline_args "$@"
-  validate_registry_params
   ensure_kind_cluster "$CLUSTER_NAME"
-  ensure_local_registry
-  install_dependencies
-  create_namespaces
-  create_registry_secret
   deploy_korifi
-  create_cluster_builder
-  configure_contour
   deploy_uaa
-  deploy_nginx_proxy
-  create_cf_admin_user
-  
+
   echo ""
-  echo "Korifi deployment with UAA completed successfully!"
-  echo "You can now use 'cf auth cf-admin' to authenticate."
-  echo "API endpoint: http://localhost:30000"
-  echo "UAA endpoint: http://localhost:30080/uaa"
+  echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
-  echo "Test login with:"
-  echo "echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a http://localhost:30000"
+  echo "UAA Access:"
+  echo "  - UAA URL: http://uaa-127-0-0-1.nip.io/uaa"
+  echo "  - Admin user: admin/admin"
+  echo ""
+  echo "Korifi Access:"
+  echo "  - API URL: https://localhost:443"
+  echo "  - Test login: echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a https://localhost:443"
+  echo ""
 }
 
 main "$@"

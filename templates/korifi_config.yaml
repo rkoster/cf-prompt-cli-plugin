@@ -1,0 +1,46 @@
+externalFQDN: localhost
+externalPort: 443
+internalFQDN: korifi-api-svc.korifi.svc.cluster.local
+internalPort: 9000
+idleTimeout: 900
+readTimeout: 900
+readHeaderTimeout: 10
+writeTimeout: 900
+infoConfig:
+  description: Korifi Cloud Foundry Environment
+  name: korifi
+  minCLIVersion: 
+  recommendedCLIVersion: 
+  supportAddress: https://www.cloudfoundry.org/technology/korifi/
+rootNamespace: cf
+builderName: kpack-image-builder
+runnerName: statefulset-runner
+defaultLifecycleConfig:
+  type: buildpack
+  stack: cflinuxfs3
+  stagingMemoryMB: 0
+containerRepositoryPrefix: "localregistry-docker-registry.default.svc.cluster.local:30050/"
+packageRegistrySecretNames:
+- "image-registry-credentials"
+defaultDomainName: apps-127-0-0-1.nip.io
+userCertificateExpirationWarningDuration: 168h
+authProxyHost: ""
+authProxyCACert: ""
+logLevel: debug
+list:
+  defaultPageSize: 5000
+experimental:
+  managedServices:
+    enabled: true
+  uaa:
+    enabled: true
+    url: http://uaa-127-0-0-1.nip.io
+  externalLogCache:
+    enabled: false
+    url: 
+    trustInsecureLogCache: false
+  k8sclient:
+    qps: 0
+    burst: 0
+  securityGroups:
+    enabled: true
