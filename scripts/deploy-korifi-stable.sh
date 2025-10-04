@@ -125,12 +125,16 @@ EOF
   fi
   
   # Start UAA on HTTP only (nginx will handle SSL termination)
+  # Configure Tomcat to trust X-Forwarded-* headers from nginx proxy
   docker run -d \
     --name uaa \
     --hostname uaa-172-19-0-1.local \
     -p 8080:8080 \
     -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
     -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
+    -e SERVER_TOMCAT_REMOTEIP_PROTOCOL_HEADER="X-Forwarded-Proto" \
+    -e SERVER_TOMCAT_REMOTEIP_PORT_HEADER="X-Forwarded-Port" \
+    -e SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=".*" \
     cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880
   
   # Wait for UAA to be ready on HTTP
