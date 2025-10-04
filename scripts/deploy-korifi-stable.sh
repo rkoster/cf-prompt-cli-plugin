@@ -109,6 +109,9 @@ function deploy_korifi() {
   
   # Apply our custom UAA-enabled configuration
   kubectl create configmap korifi-api-config --from-file="$TEMPLATES_DIR/korifi_config.yaml" -n korifi --dry-run=client -o yaml | kubectl apply -f -
+
+  # Restart API to make sure our config get's picked up
+  kubectl -n korifi rollout restart deployment korifi-api-deployment
   
   # Wait for Korifi components to be ready
   kubectl wait --for=condition=Available=True deployment/korifi-api-deployment -n korifi --timeout=10m
@@ -146,11 +149,11 @@ function main() {
   echo ""
   echo "UAA Access:"
   echo "  - UAA URL: http://uaa-127-0-0-1.nip.io/uaa"
-  echo "  - Admin user: admin/admin"
+  echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"
   echo "  - API URL: https://localhost:443"
-  echo "  - Test login: echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a https://localhost:443"
+  echo "  - Test login: echo -e \"admin\\nadmin_secret\" | CF_TRACE=true cf login -a https://localhost:443 --skip-ssl-validation"
   echo ""
 }
 
