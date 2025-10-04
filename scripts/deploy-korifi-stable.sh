@@ -146,15 +146,40 @@ EOF
   echo "UAA OIDC configuration prepared."
 }
 
+function build_custom_kind_image() {
+  echo "Building custom kind image with UAA hostname in /etc/hosts..."
+  
+  local uaa_ip
+  uaa_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' uaa)
+  
+  if [[ -z "$uaa_ip" ]]; then
+    echo "ERROR: Could not determine UAA container IP address"
+    exit 1
+  fi
+  
+  echo "UAA container IP: $uaa_ip"
+  
+  cat > /tmp/kind-node.Dockerfile <<EOF
+FROM kindest/node:v1.34.0
+RUN echo "$uaa_ip uaa-127-0-0-1.nip.io" >> /etc/hosts
+EOF
+  
+  docker build -t kindest/node:with-uaa-hosts -f /tmp/kind-node.Dockerfile /tmp
+  
+  echo "Custom kind image built successfully."
+}
+
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
     prepare_uaa_oidc_config
+    build_custom_kind_image
     
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  image: kindest/node:with-uaa-hosts
   extraMounts:
   - containerPath: /etc/uaa-certs
     hostPath: /tmp/uaa-certs
@@ -197,23 +222,6 @@ containerdConfigPatches:
     endpoint = ["http://host.docker.internal:5001"]
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
-    
-    kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns-custom
-  namespace: kube-system
-data:
-  uaa.override: |
-    rewrite stop {
-      name regex uaa-127-0-0-1.nip.io host.docker.internal
-      answer name host.docker.internal uaa-127-0-0-1.nip.io
-    }
-EOF
-    
-    kubectl -n kube-system rollout restart deployment/coredns
-    kubectl -n kube-system rollout status deployment/coredns --timeout=2m
   fi
 
   kind export kubeconfig --name "$CLUSTER_NAME"
