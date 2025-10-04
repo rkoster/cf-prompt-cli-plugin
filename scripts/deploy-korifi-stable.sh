@@ -90,7 +90,7 @@ function start_uaa_docker() {
   
   # Generate SSL certificate with SAN including both hostname and gateway IP
   if [ ! -f "${TEMPLATES_DIR}/uaa-cert/uaa.crt" ]; then
-    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP ${kind_gateway_ip})..."
+    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP 172.19.0.1)..."
     cat > "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" <<EOF
 [req]
 default_bits = 2048
@@ -101,7 +101,7 @@ req_extensions = req_ext
 x509_extensions = v3_ca
 
 [dn]
-CN = uaa-127-0-0-1.nip.io
+CN = 172.19.0.1
 
 [req_ext]
 subjectAltName = @alt_names
@@ -113,10 +113,9 @@ keyUsage = digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
 
 [alt_names]
-DNS.1 = uaa-127-0-0-1.nip.io
-DNS.2 = localhost
+DNS.1 = localhost
 IP.1 = 127.0.0.1
-IP.2 = ${kind_gateway_ip}
+IP.2 = 172.19.0.1
 EOF
     
     openssl req -new -x509 -nodes -days 365 \
@@ -125,10 +124,10 @@ EOF
       -out "${TEMPLATES_DIR}/uaa-cert/uaa.crt"
   fi
   
-  # Start UAA on HTTP only (no SSL complexity)
+  # Start UAA on HTTP only (nginx will handle SSL termination)
   docker run -d \
     --name uaa \
-    --hostname uaa-127-0-0-1.nip.io \
+    --hostname uaa-172-19-0-1.local \
     -p 8080:8080 \
     -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
     -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
@@ -162,14 +161,14 @@ EOF
     --add-host=host.docker.internal:host-gateway \
     nginx:alpine
   
-  # Wait for HTTPS to be ready
-  echo "Waiting for nginx HTTPS proxy to be ready..."
+  # Wait for HTTPS to be ready at gateway IP
+  echo "Waiting for nginx HTTPS proxy to be ready at 172.19.0.1:8443..."
   for i in {1..15}; do
-    if curl -k -s https://localhost:8443/login > /dev/null 2>&1; then
-      echo "UAA is ready on HTTPS via nginx proxy!"
+    if curl -k -s https://172.19.0.1:8443/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTPS at https://172.19.0.1:8443!"
       return 0
     fi
-    echo "Waiting for nginx SSL proxy (attempt $i/15)..."
+    echo "Waiting for UAA HTTPS access (attempt $i/15)..."
     sleep 2
   done
   
@@ -191,7 +190,7 @@ function prepare_uaa_oidc_config() {
 }
 
 function connect_uaa_to_kind_network() {
-  echo "Connecting UAA containers to kind network..."
+  echo "Connecting UAA containers to kind network for 172.19.0.1 access..."
   
   # Ensure kind network exists
   if ! docker network inspect kind > /dev/null 2>&1; then
@@ -199,28 +198,22 @@ function connect_uaa_to_kind_network() {
     exit 1
   fi
   
-  # Connect nginx-ssl to kind network (this is what K8s API server will access)
+  # Connect nginx-ssl to kind network (this provides the 172.19.0.1:8443 endpoint)
   if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
     docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
   fi
   
-  # Connect UAA container as well for good measure
+  # Connect UAA container as well
   if docker ps -q -f name=uaa > /dev/null 2>&1; then
     docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
   fi
   
-  # Get the nginx-ssl IP on kind network (should be close to gateway IP 172.19.0.1)
-  local nginx_ip
-  nginx_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{if eq .NetworkID "'$(docker network inspect kind -f '{{.Id}}')'}}{{.IPAddress}}{{end}}{{end}}' nginx-ssl)
-  echo "nginx-ssl accessible on kind network at: ${nginx_ip}"
+  echo "UAA accessible on kind network at 172.19.0.1:8443 (nginx-ssl proxy)"
 }
 
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
     prepare_uaa_oidc_config
-    
-    # Use static kind network gateway IP for UAA hostname resolution
-    local kind_gateway_ip="172.19.0.1"
     
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
@@ -248,7 +241,7 @@ nodes:
           mountPath: /etc/uaa-oidc
           readOnly: true
       extraArgs:
-        oidc-issuer-url: https://${kind_gateway_ip}:8443/uaa/oauth/token
+        oidc-issuer-url: https://172.19.0.1:8443/uaa
         oidc-client-id: cf
         oidc-username-claim: user_name
         oidc-username-prefix: "uaa:"
@@ -275,29 +268,8 @@ containerdConfigPatches:
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
     
-    # Connect UAA containers to kind network
+    # Connect UAA containers to kind network for direct IP access
     connect_uaa_to_kind_network
-    
-    # Add UAA hostname to /etc/hosts in kind control plane node
-    echo "Configuring kind node /etc/hosts with UAA gateway IP..."
-    docker exec "${CLUSTER_NAME}-control-plane" bash -c "echo '${kind_gateway_ip} uaa-127-0-0-1.nip.io' >> /etc/hosts"
-    
-    kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns-custom
-  namespace: kube-system
-data:
-  uaa.override: |
-    rewrite stop {
-      name regex uaa-127-0-0-1.nip.io host.docker.internal
-      answer name host.docker.internal uaa-127-0-0-1.nip.io
-    }
-EOF
-    
-    kubectl -n kube-system rollout restart deployment/coredns
-    kubectl -n kube-system rollout status deployment/coredns --timeout=2m
   fi
 
   kind export kubeconfig --name "$CLUSTER_NAME"
@@ -327,11 +299,12 @@ function deploy_korifi() {
 }
 
 function configure_korifi_for_uaa() {
-  echo "Configuring Korifi to use Docker UAA..."
+  echo "Configuring Korifi to use Docker UAA at 172.19.0.1:8443..."
   
+  # Apply the simplified UAA configuration (no routing needed)
   kubectl apply -f "$TEMPLATES_DIR/uaa-httproute.yaml"
   
-  echo "Korifi UAA configuration completed!"
+  echo "Korifi UAA configuration completed! UAA accessible at https://172.19.0.1:8443/"
 }
 
 function configure_uaa_rbac() {
@@ -370,7 +343,7 @@ function main() {
   echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
   echo "UAA Access:"
-  echo "  - UAA URL: https://uaa-127-0-0-1.nip.io:8443/uaa"
+  echo "  - UAA URL: https://172.19.0.1:8443/uaa"
   echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"
