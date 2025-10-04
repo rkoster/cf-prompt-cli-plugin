@@ -1,8 +1,14 @@
 issuer:
-  uri: https://uaa-127-0-0-1.nip.io:8443/uaa
+  uri: https://172.19.0.1:8443
+
+# Disable CSRF protection for public endpoints
+csrf:
+  enabled: false
 
 uaa:
-  url: https://uaa-127-0-0-1.nip.io:8443/uaa
+  url: https://172.19.0.1:8443/uaa
+  token:
+    url: https://172.19.0.1:8443/uaa/oauth/token
 
 LOGIN_SECRET: loginsecret
 
@@ -79,6 +85,10 @@ login:
         passphrase: ""
 
 oauth:
+  authorize:
+    ssl: true
+  token:
+    url: https://172.19.0.1:8443/uaa/oauth/token
   client:
     override: true
   clients:
