@@ -87,4 +87,7 @@ clean-korifi:
 	@echo "Stopping and removing local Docker registry..."
 	devbox run -- docker stop registry 2>/dev/null || true
 	devbox run -- docker rm registry 2>/dev/null || true
-	@echo "Kind cluster '$(CLUSTER_NAME)' and local registry cleaned up."
+	@echo "Stopping and removing UAA Docker container..."
+	devbox run -- docker stop uaa 2>/dev/null || true
+	devbox run -- docker rm uaa 2>/dev/null || true
+	@echo "Kind cluster '$(CLUSTER_NAME)', local registry, and UAA container cleaned up."

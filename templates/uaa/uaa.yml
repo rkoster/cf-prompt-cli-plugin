@@ -1,0 +1,139 @@
+issuer:
+  uri: http://uaa-127-0-0-1.nip.io/uaa
+
+LOGIN_SECRET: loginsecret
+
+database:
+  maxactive: 100
+  maxidle: 10
+  minidle: 0
+  removeabandoned: false
+  logabandoned: true
+  abandonedtimeout: 300
+  url: jdbc:hsqldb:mem:uaa
+
+smtp:
+  host: null
+  port: 25
+  starttls: null
+  from_address: null
+  sslprotocols: null
+
+login:
+  saml:
+    activeKeyId: uaa-saml-key-1
+    keys:
+      uaa-saml-key-1:
+        key: |
+          -----BEGIN PRIVATE KEY-----
+          MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDBUufXuXWdLdfv
+          JarjfBIKkh88SpkOSsVuulAwzF+y0tg5W+3Q0fH6j7AXwVNr0NHE5/CYSdYHueWZ
+          VW0Yl1GYtJOl3hDYnxGKDv0XPcGdk8SFFoiDOFvVTyd3B/s63Rn77QgynZMdG873
+          FDlzrQk8VXnABjJnDrs5pHlw55qknlCLw0BPOY3kpPcuDoejZBGNKA3nfAwCncKH
+          nfbSLa+zbXnZ7F+AHs6E4m5qZKH3QJrVBfZqUcL40I/CnUOO+lYRqwKP5SR/3jfr
+          WTzvM+NMUaSK3mk0BZ9+kf+Fmk4AW68DWbG6sTPIsM9/N9kKp3EYaufg83FGKR58
+          ZgMaZwJlAgMBAAECggEABH+eX3m0T+0CKlFxEYwQi2htC6UcvKVmxLXXKduHmoyn
+          dWY7OXG5NMBlM5hPDaI1T2SqR5DoRxO/UPsY58qVnn0NNn3dXH0PFmxU3VaVi8ol
+          d4dXs9363RLTc0SfRvZgJWmVmD/sbW/5N+yjjZqILXw7sgky4Q0JtESsgsEQ6yWt
+          laounYidgEMKLX3x8x48HgTvgqplT47SSwN2XPevVZfbC1BGbtt/ziWSvLbi0ond
+          mXhPTfzWvTJQ8lgjWQfsE/r5Ygc+XCaH2JqN7mseORnNPQH6V7JUAp7wtvKnAvFN
+          c7gSMMibtUw027XQsv7EtUa+gMry/u/kp9muFFwcfQKBgQDe2B6v6eDXJcnecNfB
+          IKm8SkIXYAx1THgwVD2n3hW+o9LOGP9NOKqtdIbsNPowO1Ej6DBRGUdrF6DMN86P
+          gpkXO10JU/etCt/LADaotukWml18vJyFcM2kEoAXMMC72+Kc5r30tGKhuGJctDpf
+          iGSPKaPijo1MBNA4iS7dDxt1CwKBgQDeFmONQQxT5DMnbBzZeB8DzWGX6v90z04N
+          cbJVQqXoc/U2jYEsnL4MTr27PFyWwwnL+nJ5Hfvz0uiQOzkvEV7ggt1wwZ0o/wAa
+          zt2pti9/RVajOKZiY+yogOTcxGvKnUkpcSBetOye1mfwNHdyUoINEUhRG8QFCyTt
+          YRz5DHAsTwKBgAvQBQBqM2L0O9kwvh8criKvBQXcL4zgOtbFAGevnBN496m5JX9g
+          a5u6O5S10jVQT6LJohYKcwC4RevNYYO19ouGuA3Qh6aClw5ZuowC9iQelqoQDXP9
+          YMk7udKA4RaUN1T93j/kd/3+migz3YxG3J3CJU/TIqZO8wKsMvHA5UG1AoGBAIXM
+          /1VO51pzlc4eeJMcp7LmvfGFBzsc2m2HHmX3rXUKx6WCQ1zZYjaQCgcQKsg54WEf
+          FnCZ+/2+B5c91wngcUTaEwen3kOgvjNohmuE88C9yaC0tKl6gk5SuY+4VyjO8hEh
+          strcLeLUUfKJ6Zza0LeGvgb/r21KdYj+hTIWqE5JAoGBANuQ94b37lY7a+xeBm1g
+          IWS/159c6jNA6fFA1ysRw/+Mtih5iSpJa25ZU4GQWibcnxpTaMOgUDikJPGg07R+
+          rBgEypO3Wc1/DW7lHIlPqCWOI3bS+TmjHGwsT1eRTT/e1J3lWzjMg0PhAh3yNG+A
+          gW1boJTUmKCsaZu61Ua8HhiZ
+          -----END PRIVATE KEY-----
+        certificate: |
+          -----BEGIN CERTIFICATE-----
+          MIIDJzCCAg+gAwIBAgIUXCh/3MJdYQQ1ric53qUiRBWXeYEwDQYJKoZIhvcNAQEL
+          BQAwIzEhMB8GA1UEAwwYU0FNTCBTaWduaW5nIENlcnRpZmljYXRlMB4XDTI1MTAw
+          MzE3MjI0OFoXDTM1MTAwMTE3MjI0OFowIzEhMB8GA1UEAwwYU0FNTCBTaWduaW5n
+          IENlcnRpZmljYXRlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwVLn
+          17l1nS3X7yWq43wSCpIfPEqZDkrFbrpQMMxfstLYOVvt0NHx+o+wF8FTa9DRxOfw
+          mEnWB7nlmVVtGJdRmLSTpd4Q2J8Rig79Fz3BnZPEhRaIgzhb1U8ndwf7Ot0Z++0I
+          Mp2THRvO9xQ5c60JPFV5wAYyZw67OaR5cOeapJ5Qi8NATzmN5KT3Lg6Ho2QRjSgN
+          53wMAp3Ch5320i2vs2152exfgB7OhOJuamSh90Ca1QX2alHC+NCPwp1DjvpWEasC
+          j+Ukf94361k87zPjTFGkit5pNAWffpH/hZpOAFuvA1mxurEzyLDPfzfZCqdxGGrn
+          4PNxRikefGYDGmcCZQIDAQABo1MwUTAdBgNVHQ4EFgQUIpaDkn0ieEGOLPH/3Sxa
+          a0EUvNgwHwYDVR0jBBgwFoAUIpaDkn0ieEGOLPH/3Sxaa0EUvNgwDwYDVR0TAQH/
+          BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAdmSImdGcmZUxdCRpTOBzEqXx8zXI
+          1lyiaeqTC3c0oh0Sh2Z77myrEvnb2idLwHLzjoC3RQAk2rgH3wcJ/ty3KafnsX8b
+          Qy75dVDYsEPa1y8YNatFmxx6iQ8boTsmGhUTENKKWBd22fizc3+50w8Yi9PX6pXz
+          HRwZKfs1Nsxlv9NqInz8b5RBJdQet0i6rEU/YQvGmLq3A0QttaQZp+cftzO9J0eo
+          gMjZfizAPfMq1hTzZrS0jnSO03U1MVbpTZzoZoT8Hx0UDJX3YXzNN0squjWV32Kt
+          yWVVSSlVCTzP8NkboEVMewMlJ7EvFUcG4Jc7q4verCkI23Tw4J7dVckiHg==
+          -----END CERTIFICATE-----
+        passphrase: ""
+
+oauth:
+  client:
+    override: true
+  clients:
+    admin:
+      authorized-grant-types: client_credentials
+      authorities: clients.read,clients.write,clients.secret,uaa.admin,scim.read,scim.write,password.write
+      secret: admin-secret
+    cf:
+      access-token-validity: 1200
+      authorities: uaa.none
+      authorized-grant-types: password,refresh_token,urn:ietf:params:oauth:grant-type:jwt-bearer
+      override: true
+      refresh-token-validity: 2592000
+      scope: network.admin,network.write,cloud_controller.read,cloud_controller.write,openid,password.write,cloud_controller.admin,scim.read,scim.write,doppler.firehose,uaa.user,routing.router_groups.read,routing.router_groups.write,cloud_controller.admin_read_only,cloud_controller.global_auditor,perm.admin,clients.read
+      secret: ''
+
+scim:
+  users:
+  - admin|admin_secret|admin@admin.admin|Admin|Admin|cloud_controller.admin,scim.read,scim.write,doppler.firehose,openid,routing.router_groups.read,routing.router_groups.write,network.admin,clients.read
+
+jwt:
+  token:
+    policy:
+      activeKeyId: key-1
+      keys:
+        key-1:
+          signingKey: |
+            -----BEGIN PRIVATE KEY-----
+            MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC86TXUwHix62GR
+            WueivzokOU4s9ymEGfehe2BTbiDquv9xW7qaiKp3kvAcjRJ6GOw/bbtIypE46As4
+            8F+E9pDGLMY0lFD7KOSgBmA9dYsYw+RkxVPNC9BrgjWKExvAUF+5R116dDT8kxud
+            SnAMafXQ8ayRMg4EbRPJjw6Op9lyyqzw4I0cWP0d3mg/6WTXT/R6L2W2z+M0g6tD
+            v00JAq/sZqVfEGxruo1K4FFgmWEOLKX0W6OXk/uHDq3r99Rfri5JsrlNPY0dp0Db
+            678J/eS/BlQKkAFczWzaiFHjXlOMawBhoWNgv4iKdy0GOUYVVl13KIsj10RzhW3Y
+            pOpIKNrhAgMBAAECggEACCuj/uQmNDfEfAds/k58AsYRugMkogiHe838wA8C0HQv
+            CSWZAAcKLGrIBMwbMPmz+hhSYdcVCduLZLaMwxDw+QlFt0904zAFF2C/N9lGH1eV
+            oMAiHDu3E3dJvoOODzbKtRY/lkTBZ+0q5BYsm3TXw2Y4ev0puwpGsVCFJilfT8Ye
+            NDxk3geKv+XUN8e1IYxUokAuELJFESGN8dAxVVMhf1opGtEOy+L/+fCXHZTvE3u3
+            8f9PsmOqmD+xr1BSQP04duTAgd5frtwXTXPvK3QlG2GSDzm/uAO84FAfYBcj84NP
+            AHzKigXlhshcDk5rRGCGWk0UYKrlkvonJik64UA0swKBgQDwkwxvbniAkMWzL/mB
+            ZQvmWTatubriQ2F+ol3l8py878bk2jAd2HDuhQZ3YPrSilG2JZo5LxRadcz861TB
+            L64W6AbUAlUCsK2/qmjWTVgpK6RYje5efr0YVWTGfiXnsFj6KKSe70yxk9lxRnzH
+            SVsYDyyWM3Joe9JhBwPRoAeiAwKBgQDJBh+FMB7TCK+/+wkjxfJksGjoUZZbcn/1
+            3adiWCa+g8/8Cgg3XoQzzJ5fpnkm1w34uro30DGB6oe8vioAJeMmOmjj7U6MNf4k
+            Kgn3G3NUv7Y1CVDDcpeK7kQ4yEucEwyaoTr+FNXpXx8ropybcgAsLbyVixSAZhcE
+            qX6urEbMSwKBgCOFwwdNK5PoTJjp05Csp/YqZC2AyDySsHmvZegHS+eGDDtMkGBH
+            zl0Z3VuRQVgHPouDv+MDtaCp1kveP9SKwsz1E9UIRx8vkWhEtFg4cXUa0ZiV1IW1
+            dxx5t3irtdMhMfI2QCCLuypZZ3kXbGNMzJuf2fiPviv5ZJYZIBI67AWbAoGAQO0g
+            WxUar5Bbq0b6QbqaOlkb2QUY6fpGR/PKLyJHiTrrfv0CgFefnVdWQ5ByCtBkq9Qr
+            dwFgLBTCuHw29otGHT+6RvuLZg++QJHvXAdaraGpyOF0W1v0hCPGlwxiF0uzw3GV
+            qyCxoklduOsxZ6dfVOWExkwAWCQhBRl1WBc+WpcCgYA1zFDPzM+LDcqGJdp+XH7c
+            yHhqAnBgaopRq8pbgp4zvC9SMUIX8Hd/AGqDNQO7FjMfRFrTcrWdIb2W1EWxI3j8
+            3D8DCRZNPZAoVG1BQcjRsgtPrFvErxFEBAKXxiuIXUw96RiBEX6xNmD4I10EyGK2
+            Odnbw1oo+AIMC08hBCRbZg==
+            -----END PRIVATE KEY-----
+
+encryption:
+  active_key_label: uaa-encryption-key-1
+  encryption_keys:
+    - label: uaa-encryption-key-1
+      passphrase: uaa-encryption-passphrase
