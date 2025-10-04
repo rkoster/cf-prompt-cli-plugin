@@ -76,6 +76,35 @@ function validate_registry_params() {
   echo "$DOCKER_SERVER $DOCKER_USERNAME $DOCKER_PASSWORD $REPOSITORY_PREFIX $KPACK_BUILDER_REPOSITORY" >/dev/null
 }
 
+function start_uaa_docker() {
+  echo "Starting UAA in Docker..."
+  
+  docker stop uaa 2>/dev/null || true
+  docker rm uaa 2>/dev/null || true
+  
+  docker run -d \
+    --name uaa \
+    --hostname uaa-127-0-0-1.nip.io \
+    -p 8080:8080 \
+    -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
+    -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
+    cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880
+  
+  echo "Waiting for UAA to be ready..."
+  for i in {1..30}; do
+    if curl -s http://localhost:8080/healthz > /dev/null 2>&1; then
+      echo "UAA is ready!"
+      return 0
+    fi
+    echo "Waiting for UAA to start (attempt $i/30)..."
+    sleep 2
+  done
+  
+  echo "ERROR: UAA failed to start within 60 seconds"
+  docker logs uaa
+  exit 1
+}
+
 function ensure_kind_cluster() {
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
     cat > /tmp/kind-config.yaml <<EOF
@@ -90,8 +119,44 @@ nodes:
   - containerPort: 32443
     hostPort: 443
     protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        "enable-admission-plugins": "NodeRestriction"
+    controllerManager:
+      extraArgs:
+        "bind-address": "0.0.0.0"
+    scheduler:
+      extraArgs:
+        "bind-address": "0.0.0.0"
+  - |
+    kind: KubeletConfiguration
+    cgroupDriver: systemd
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+    endpoint = ["http://host.docker.internal:5001"]
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
+    
+    kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  uaa.override: |
+    rewrite stop {
+      name regex uaa-127-0-0-1.nip.io host.docker.internal
+      answer name host.docker.internal uaa-127-0-0-1.nip.io
+    }
+EOF
+    
+    kubectl -n kube-system rollout restart deployment/coredns
+    kubectl -n kube-system rollout status deployment/coredns --timeout=2m
   fi
 
   kind export kubeconfig --name "$CLUSTER_NAME"
@@ -120,29 +185,20 @@ function deploy_korifi() {
   echo "Korifi deployment completed!"
 }
 
-function deploy_uaa() {
-  echo "Deploying UAA using templates..."
+function configure_korifi_for_uaa() {
+  echo "Configuring Korifi to use Docker UAA..."
   
-  # Create UAA namespace
-  kubectl create namespace uaa-system --dry-run=client -o yaml | kubectl apply -f -
-  
-  # Deploy UAA components using our templates
-  kubectl apply -f "$TEMPLATES_DIR/uaa-config-updated.yaml"
-  kubectl apply -f "$TEMPLATES_DIR/uaa-deployment-fixed.yaml"
   kubectl apply -f "$TEMPLATES_DIR/uaa-httproute.yaml"
   
-  # Wait for UAA to be ready
-  echo "Waiting for UAA to be ready..."
-  kubectl wait --for=condition=Available=True deployment/uaa -n uaa-system --timeout=10m
-  
-  echo "UAA deployment completed!"
+  echo "Korifi UAA configuration completed!"
 }
 
 function main() {
   parse_cmdline_args "$@"
+  start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
-  deploy_uaa
+  configure_korifi_for_uaa
 
   echo ""
   echo "✅ Korifi with UAA deployment completed successfully!"
