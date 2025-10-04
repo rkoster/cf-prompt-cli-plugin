@@ -1,5 +1,5 @@
 issuer:
-  uri: http://uaa-127-0-0-1.nip.io/uaa
+  uri: https://uaa-127-0-0-1.nip.io/uaa
 
 LOGIN_SECRET: loginsecret
 
