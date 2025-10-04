@@ -34,7 +34,7 @@ experimental:
     enabled: true
   uaa:
     enabled: true
-    url: http://uaa-127-0-0-1.nip.io
+    url: http://uaa-127-0-0-1.nip.io:8080
   externalLogCache:
     enabled: false
     url: 
