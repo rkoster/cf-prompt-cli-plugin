@@ -31,18 +31,40 @@ type: Opaque
 stringData:
   jwt_policy_signing_keys.yml: |
     jwt:
-      policy:
-        active_key_id: uaa-jwt-key-1
-        keys:
-          uaa-jwt-key-1:
-            signing-key: |
-              -----BEGIN RSA PRIVATE KEY-----
-              MIIEpAIBAAKCAQEA2Z3QX0BTLS5Z1DnWAA2nWoLXuBEKs6GwWQKa3DEHEOKhBmOO
-              2aNG7hhpI3LXrFjSBdGcQr2p5xN5qlI7cMtMpgPJa5sP9VJdWePQeRY2Q8Y5Q5FZ
-              dI3Z5E2QHBG5sG2lW3B2G8WJz6Y1C5Z2LPL1i8qQ5P8YJ5SQK5oRLu5I7K2w6P3Y
-              V8ZJtU3K7E5x8F5c3RQRxB5GJj1Q8W7E8ePF9SgP1x9Y8pR2QyP7cJ8z8qC5Kh8L
-              vJ7QLYm7n8P8FJ9vU8B8s3W8K3j9X5qS7G3L2YGpJ6F8c8qHY9z8vB8m8E3F8n7G
-              -----END RSA PRIVATE KEY-----
+      token:
+        policy:
+          activeKeyId: key-1
+          keys:
+            key-1:
+              signingKey: |
+                -----BEGIN PRIVATE KEY-----
+                MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC86TXUwHix62GR
+                WueivzokOU4s9ymEGfehe2BTbiDquv9xW7qaiKp3kvAcjRJ6GOw/bbtIypE46As4
+                8F+E9pDGLMY0lFD7KOSgBmA9dYsYw+RkxVPNC9BrgjWKExvAUF+5R116dDT8kxud
+                SnAMafXQ8ayRMg4EbRPJjw6Op9lyyqzw4I0cWP0d3mg/6WTXT/R6L2W2z+M0g6tD
+                v00JAq/sZqVfEGxruo1K4FFgmWEOLKX0W6OXk/uHDq3r99Rfri5JsrlNPY0dp0Db
+                678J/eS/BlQKkAFczWzaiFHjXlOMawBhoWNgv4iKdy0GOUYVVl13KIsj10RzhW3Y
+                pOpIKNrhAgMBAAECggEACCuj/uQmNDfEfAds/k58AsYRugMkogiHe838wA8C0HQv
+                CSWZAAcKLGrIBMwbMPmz+hhSYdcVCduLZLaMwxDw+QlFt0904zAFF2C/N9lGH1eV
+                oMAiHDu3E3dJvoOODzbKtRY/lkTBZ+0q5BYsm3TXw2Y4ev0puwpGsVCFJilfT8Ye
+                NDxk3geKv+XUN8e1IYxUokAuELJFESGN8dAxVVMhf1opGtEOy+L/+fCXHZTvE3u3
+                8f9PsmOqmD+xr1BSQP04duTAgd5frtwXTXPvK3QlG2GSDzm/uAO84FAfYBcj84NP
+                AHzKigXlhshcDk5rRGCGWk0UYKrlkvonJik64UA0swKBgQDwkwxvbniAkMWzL/mB
+                ZQvmWTatubriQ2F+ol3l8py878bk2jAd2HDuhQZ3YPrSilG2JZo5LxRadcz861TB
+                L64W6AbUAlUCsK2/qmjWTVgpK6RYje5efr0YVWTGfiXnsFj6KKSe70yxk9lxRnzH
+                SVsYDyyWM3Joe9JhBwPRoAeiAwKBgQDJBh+FMB7TCK+/+wkjxfJksGjoUZZbcn/1
+                3adiWCa+g8/8Cgg3XoQzzJ5fpnkm1w34uro30DGB6oe8vioAJeMmOmjj7U6MNf4k
+                Kgn3G3NUv7Y1CVDDcpeK7kQ4yEucEwyaoTr+FNXpXx8ropybcgAsLbyVixSAZhcE
+                qX6urEbMSwKBgCOFwwdNK5PoTJjp05Csp/YqZC2AyDySsHmvZegHS+eGDDtMkGBH
+                zl0Z3VuRQVgHPouDv+MDtaCp1kveP9SKwsz1E9UIRx8vkWhEtFg4cXUa0ZiV1IW1
+                dxx5t3irtdMhMfI2QCCLuypZZ3kXbGNMzJuf2fiPviv5ZJYZIBI67AWbAoGAQO0g
+                WxUar5Bbq0b6QbqaOlkb2QUY6fpGR/PKLyJHiTrrfv0CgFefnVdWQ5ByCtBkq9Qr
+                dwFgLBTCuHw29otGHT+6RvuLZg++QJHvXAdaraGpyOF0W1v0hCPGlwxiF0uzw3GV
+                qyCxoklduOsxZ6dfVOWExkwAWCQhBRl1WBc+WpcCgYA1zFDPzM+LDcqGJdp+XH7c
+                yHhqAnBgaopRq8pbgp4zvC9SMUIX8Hd/AGqDNQO7FjMfRFrTcrWdIb2W1EWxI3j8
+                3D8DCRZNPZAoVG1BQcjRsgtPrFvErxFEBAKXxiuIXUw96RiBEX6xNmD4I10EyGK2
+                Odnbw1oo+AIMC08hBCRbZg==
+                -----END PRIVATE KEY-----
 ---
 apiVersion: v1
 kind: Secret
