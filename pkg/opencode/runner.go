@@ -5,10 +5,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 )
 
 func Run(workDir, prompt string, stdout io.Writer) error {
-	cmd := exec.Command("opencode", "run", prompt)
+	binaryPath := getOpencodeBinaryPath()
+	
+	cmd := exec.Command(binaryPath, "run", prompt)
 	cmd.Dir = workDir
 	cmd.Stdout = stdout
 	cmd.Stderr = os.Stderr
@@ -18,4 +22,13 @@ func Run(workDir, prompt string, stdout io.Writer) error {
 	}
 
 	return nil
+}
+
+func getOpencodeBinaryPath() string {
+	installDir := getInstallDir()
+	binaryName := "opencode"
+	if runtime.GOOS == "windows" {
+		binaryName = "opencode.exe"
+	}
+	return filepath.Join(installDir, binaryName)
 }
