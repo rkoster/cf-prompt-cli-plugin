@@ -399,6 +399,31 @@ func (c *Client) StopApp(appGUID string) error {
 	return nil
 }
 
+func (c *Client) GetCurrentDropletPackageGUID(appGUID string) (string, error) {
+	app, err := c.cf.Applications.Get(context.Background(), appGUID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get app: %w", err)
+	}
+
+	if app.Relationships.CurrentDroplet.Data == nil || app.Relationships.CurrentDroplet.Data.GUID == "" {
+		return "", nil
+	}
+
+	droplet, err := c.cf.Droplets.Get(context.Background(), app.Relationships.CurrentDroplet.Data.GUID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get droplet: %w", err)
+	}
+
+	if packageLink, exists := droplet.Links["package"]; exists && packageLink.Href != "" {
+		parts := strings.Split(packageLink.Href, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1], nil
+		}
+	}
+
+	return "", nil
+}
+
 func (c *Client) zipDirectory(source, target string) error {
 	zipfile, err := os.Create(target)
 	if err != nil {
