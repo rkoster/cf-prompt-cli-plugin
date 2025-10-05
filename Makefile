@@ -11,6 +11,7 @@ PLUGIN_BINARY = $(PLUGIN_NAME)
 help:
 	@echo "Available targets:"
 	@echo "  build              - Build the CF prompt plugin"
+	@echo "  build-prompter     - Build the prompter binary"
 	@echo "  install            - Install the plugin to CF CLI"
 	@echo "  uninstall          - Uninstall the plugin from CF CLI"
 	@echo "  test               - Run unit tests"
@@ -40,6 +41,12 @@ build:
 	@echo "Building CF prompt plugin..."
 	devbox run -- go build -o $(PLUGIN_BINARY)
 	@echo "Plugin built successfully: $(PLUGIN_BINARY)"
+
+# Build the prompter binary
+build-prompter:
+	@echo "Building prompter binary..."
+	devbox run -- go build -o prompter ./cmd/prompter
+	@echo "Prompter built successfully: prompter"
 
 # Install the plugin to CF CLI
 install: uninstall build
