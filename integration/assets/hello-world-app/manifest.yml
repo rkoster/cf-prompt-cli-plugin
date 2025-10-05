@@ -3,4 +3,4 @@ applications:
   memory: 128M
   instances: 1
   buildpacks:
-  - go_buildpack
+  - paketo-buildpacks/go
