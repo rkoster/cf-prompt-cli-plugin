@@ -267,8 +267,13 @@ nodes:
     cgroupDriver: systemd
 containerdConfigPatches:
 - |-
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
-    endpoint = ["http://host.docker.internal:5001"]
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localregistry-docker-registry.default.svc.cluster.local:30050"]
+        endpoint = ["http://127.0.0.1:30050"]
+    [plugins."io.containerd.grpc.v1.cri".registry.configs]
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."127.0.0.1:30050".tls]
+        insecure_skip_verify = true
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
     
