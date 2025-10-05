@@ -2,10 +2,13 @@ package cfclient
 
 import (
 	"archive/zip"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/cloudfoundry/go-cfclient/v3/client"
@@ -36,7 +39,7 @@ func (c *Client) GetAppGUID(appName, spaceGUID string) (string, error) {
 	opts.SpaceGUIDs = client.Filter{Values: []string{spaceGUID}}
 	opts.Names = client.Filter{Values: []string{appName}}
 
-	apps, err := c.cf.Applications.ListAll(nil, opts)
+	apps, err := c.cf.Applications.ListAll(context.Background(), opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to list apps: %w", err)
 	}
@@ -54,7 +57,7 @@ func (c *Client) GetLatestPackage(appGUID string) (*resource.Package, error) {
 	opts.States = client.Filter{Values: []string{"READY"}}
 	opts.OrderBy = "-created_at"
 
-	packages, err := c.cf.Packages.ListAll(nil, opts)
+	packages, err := c.cf.Packages.ListAll(context.Background(), opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list packages: %w", err)
 	}
@@ -67,7 +70,20 @@ func (c *Client) GetLatestPackage(appGUID string) (*resource.Package, error) {
 }
 
 func (c *Client) DownloadPackage(pkg *resource.Package, destDir string) error {
+	// Check if this is an image-based package (Korifi)
+	if pkg.Data.Docker != nil || (pkg.Data.Bits != nil && pkg.DataRaw != nil) {
+		// Parse the raw data to check for image field
+		var data map[string]interface{}
+		if err := json.Unmarshal(pkg.DataRaw, &data); err == nil {
+			if imageURL, exists := data["image"]; exists {
+				return c.downloadFromImage(imageURL.(string), destDir)
+			}
+		}
+	}
+
+	// Fallback to traditional download
 	downloadURL := pkg.Links["download"].Href
+	fmt.Printf("Download URL: %s\n", downloadURL)
 
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
@@ -82,6 +98,7 @@ func (c *Client) DownloadPackage(pkg *resource.Package, destDir string) error {
 	}
 	defer resp.Body.Close()
 
+	fmt.Printf("Download response status: %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download package: status %d", resp.StatusCode)
 	}
@@ -146,7 +163,7 @@ func (c *Client) unzip(src, dest string) error {
 
 func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, error) {
 	pkgCreate := resource.NewPackageCreate(appGUID)
-	pkg, err := c.cf.Packages.Create(nil, pkgCreate)
+	pkg, err := c.cf.Packages.Create(context.Background(), pkgCreate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create package: %w", err)
 	}
@@ -187,6 +204,37 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 	return pkg, nil
 }
 
+func (c *Client) downloadFromImage(imageURL, destDir string) error {
+	fmt.Printf("Downloading from container image: %s\n", imageURL)
+
+	// Create a temporary container to extract source
+	containerName := fmt.Sprintf("cf-prompt-extract-%d", os.Getpid())
+
+	// Try to create and copy from container
+	createCmd := exec.Command("docker", "create", "--name", containerName, imageURL)
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create container from image: %w", err)
+	}
+
+	// Ensure cleanup
+	defer exec.Command("docker", "rm", containerName).Run()
+
+	// Copy files from container
+	copyCmd := exec.Command("docker", "cp", containerName+":/workspace/.", destDir)
+	if err := copyCmd.Run(); err != nil {
+		// Try alternative paths
+		copyCmd = exec.Command("docker", "cp", containerName+":/app/.", destDir)
+		if err := copyCmd.Run(); err != nil {
+			copyCmd = exec.Command("docker", "cp", containerName+":/.", destDir)
+			if err := copyCmd.Run(); err != nil {
+				return fmt.Errorf("failed to copy files from container: %w", err)
+			}
+		}
+	}
+
+	fmt.Printf("Successfully extracted source from container image\n")
+	return nil
+}
 func (c *Client) zipDirectory(source, target string) error {
 	zipfile, err := os.Create(target)
 	if err != nil {

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -11,7 +10,7 @@ import (
 
 func getCurrentApp(cliConnection plugin.CliConnection) (string, error) {
 	fmt.Println("Getting current app...")
-	
+
 	cmd := exec.Command("cf", "apps")
 	output, err := cmd.Output()
 	if err != nil {
@@ -19,17 +18,17 @@ func getCurrentApp(cliConnection plugin.CliConnection) (string, error) {
 	}
 
 	lines := strings.Split(string(output), "\n")
-	
+
 	for i, line := range lines {
 		if i < 3 {
 			continue
 		}
-		
+
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		
+
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
 			appName := fields[0]
