@@ -1,5 +1,5 @@
 issuer:
-  uri: https://172.19.0.1:8443
+  uri: https://172.30.0.1:8443
 
 # Server configuration for proxy awareness  
 server:
@@ -11,9 +11,9 @@ csrf:
   enabled: false
 
 uaa:
-  url: https://172.19.0.1:8443
+  url: https://172.30.0.1:8443
   token:
-    url: https://172.19.0.1:8443
+    url: https://172.30.0.1:8443
 
 LOGIN_SECRET: loginsecret
 
@@ -93,7 +93,7 @@ oauth:
   authorize:
     ssl: true
   token:
-    url: https://172.19.0.1:8443
+    url: https://172.30.0.1:8443
   client:
     override: true
   clients:

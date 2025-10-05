@@ -7,7 +7,7 @@ req_extensions = req_ext
 x509_extensions = v3_ca
 
 [dn]
-CN = uaa-127-0-0-1.nip.io
+CN = 172.30.0.1
 
 [req_ext]
 subjectAltName = @alt_names
@@ -19,7 +19,6 @@ keyUsage = digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
 
 [alt_names]
-DNS.1 = uaa-127-0-0-1.nip.io
-DNS.2 = localhost
+DNS.1 = localhost
 IP.1 = 127.0.0.1
-IP.2 = 172.19.0.1
+IP.2 = 172.30.0.1

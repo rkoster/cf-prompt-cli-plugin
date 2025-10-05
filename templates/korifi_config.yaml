@@ -34,7 +34,7 @@ experimental:
     enabled: true
   uaa:
     enabled: true
-    url: https://172.19.0.1:8443
+    url: https://172.30.0.1:8443
   externalLogCache:
     enabled: false
     url: 
