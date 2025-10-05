@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -91,6 +92,12 @@ func run(config *Config) error {
 		return fmt.Errorf("failed to create CF client: %w", err)
 	}
 
+	instanceGUID := os.Getenv("CF_INSTANCE_GUID")
+	if instanceGUID == "" {
+		return fmt.Errorf("CF_INSTANCE_GUID environment variable not found")
+	}
+	fmt.Printf("Running as CF instance: %s\n", instanceGUID)
+
 	fmt.Printf("Getting latest package for app %s...\n", config.AppID)
 	pkg, err := client.GetLatestPackage(config.AppID)
 	if err != nil {
@@ -125,6 +132,23 @@ func run(config *Config) error {
 	fmt.Println("\nCreating new package revision...")
 	if err := regClient.UploadPackage(client, config.AppID, packageDir, config.Prompt); err != nil {
 		return fmt.Errorf("failed to create new package: %w", err)
+	}
+
+	fmt.Println("Package uploaded successfully - stopping prompter app...")
+	
+	prompterAppGUID := os.Getenv("VCAP_APPLICATION")
+	if prompterAppGUID != "" {
+		var vcapApp map[string]interface{}
+		if err := json.Unmarshal([]byte(prompterAppGUID), &vcapApp); err == nil {
+			if appGUID, ok := vcapApp["application_id"].(string); ok {
+				fmt.Printf("Stopping prompter app %s...\n", appGUID)
+				if err := client.StopApp(appGUID); err != nil {
+					fmt.Printf("Warning: failed to stop prompter app: %v\n", err)
+				} else {
+					fmt.Println("Prompter app stopped successfully")
+				}
+			}
+		}
 	}
 
 	fmt.Println("Prompter completed successfully")
