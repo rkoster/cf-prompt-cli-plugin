@@ -76,6 +76,38 @@ function validate_registry_params() {
   echo "$DOCKER_SERVER $DOCKER_USERNAME $DOCKER_PASSWORD $REPOSITORY_PREFIX $KPACK_BUILDER_REPOSITORY" >/dev/null
 }
 
+function setup_macos_colima_route() {
+  # Only run on macOS with Colima
+  if [ "$(uname)" != "Darwin" ] || ! command -v colima >/dev/null 2>&1; then
+    return 0
+  fi
+  
+  # Check if Colima is running
+  if ! colima status >/dev/null 2>&1; then
+    echo "Warning: Colima is not running. Route setup skipped."
+    return 0
+  fi
+  
+  echo "Detected macOS with Colima - setting up static route for kind network..."
+  
+  # Get Colima VM IP
+  local colima_ip=$(colima ssh -- ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+  
+  if [ -z "$colima_ip" ]; then
+    echo "Warning: Could not determine Colima VM IP. Route setup skipped."
+    return 0
+  fi
+  
+  echo "Adding route: 172.30.0.0/16 via $colima_ip"
+  
+  # Add the route (ignore errors if route already exists)
+  if ! sudo route add -net 172.30.0.0/16 "$colima_ip" 2>/dev/null; then
+    echo "Route may already exist or failed to add"
+  else
+    echo "Static route added successfully"
+  fi
+}
+
 function ensure_kind_network() {
   local expected_subnet="172.30.0.0/16"
   local expected_gateway="172.30.0.1"
@@ -351,6 +383,7 @@ function configure_uaa_rbac() {
 function main() {
   parse_cmdline_args "$@"
   ensure_kind_network
+  setup_macos_colima_route
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi

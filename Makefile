@@ -17,9 +17,12 @@ help:
 	@echo "  test               - Run unit tests"
 	@echo "  integration-test   - Run integration tests (requires deployed Korifi)"
 	@echo "  deploy-korifi      - Deploy stable Korifi v0.16.0 with UAA on kind cluster"
+	@echo "                       (on macOS with Colima: adds static route for kind network)"
 	@echo "  deploy-korifi-debug - Deploy Korifi with debugging enabled"
+	@echo "                        (on macOS with Colima: adds static route for kind network)"
 	@echo "  deploy-uaa         - Deploy UAA components only"
 	@echo "  clean-korifi       - Delete the kind cluster"
+	@echo "                       (on macOS with Colima: removes static route for kind network)"
 	@echo "  help               - Show this help message"
 	@echo ""
 	@echo "Variables:"
@@ -102,4 +105,9 @@ clean-korifi:
 	@echo "Stopping and removing UAA Docker container..."
 	devbox run -- docker stop uaa 2>/dev/null || true
 	devbox run -- docker rm uaa 2>/dev/null || true
+	@# Remove static route for kind network on macOS with Colima
+	@if [ "$$(uname)" = "Darwin" ] && command -v colima >/dev/null 2>&1; then \
+		echo "Detected macOS with Colima - removing static route for kind network..."; \
+		sudo route delete -net 172.30.0.0/16 2>/dev/null || echo "Route was not present or already removed"; \
+	fi
 	@echo "Kind cluster '$(CLUSTER_NAME)', local registry, and UAA container cleaned up."
