@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/cli/plugin"
+	"github.com/ruben/cf-prompt-cli-plugin/pkg/cfclient"
 )
 
 type AppDeployer struct {
 	cliConnection plugin.CliConnection
 	appName       string
+	cfClient      *cfclient.Client
 }
 
 func NewAppDeployer(cliConnection plugin.CliConnection) *AppDeployer {
@@ -26,15 +28,20 @@ func NewAppDeployer(cliConnection plugin.CliConnection) *AppDeployer {
 }
 
 func (d *AppDeployer) Deploy(apiEndpoint, token, appID, spaceID, orgID, registryUsername, registryPassword, prompt string) error {
-	// Strip "bearer " prefix from token if present
 	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
-		token = token[7:] // Remove "bearer " prefix
+		token = token[7:]
 	}
 
-	// Replace localhost with internal Korifi service for container access
 	if strings.Contains(apiEndpoint, "localhost") {
 		apiEndpoint = "https://korifi-api-svc.korifi.svc.cluster.local"
 	}
+
+	client, err := cfclient.New(apiEndpoint, token)
+	if err != nil {
+		return fmt.Errorf("failed to create CF client: %w", err)
+	}
+	d.cfClient = client
+
 	tempDir, err := os.MkdirTemp("", "cf-prompter-app-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
@@ -86,7 +93,6 @@ applications:
 
 	fmt.Printf("Pushing prompter app '%s' to CF...\n", d.appName)
 
-	// Use direct cf command instead of plugin framework to avoid authentication issues
 	cmd := exec.Command("cf", "push", d.appName, "-p", tempDir, "-f", manifestPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -102,31 +108,69 @@ applications:
 func (d *AppDeployer) MonitorLogs(stdout io.Writer) error {
 	fmt.Println("Monitoring logs for completion...")
 
-	// Start streaming logs with cf logs (no --recent flag for real-time streaming)
+	if d.cfClient == nil {
+		return fmt.Errorf("CF client not initialized - Deploy must be called first")
+	}
+
+	currentSpace, err := d.cliConnection.GetCurrentSpace()
+	if err != nil {
+		return fmt.Errorf("failed to get current space: %w", err)
+	}
+
+	appGUID, err := d.cfClient.GetAppGUID(d.appName, currentSpace.Guid)
+	if err != nil {
+		return fmt.Errorf("failed to get prompter app GUID: %w", err)
+	}
+
 	cmd := exec.Command("cf", "logs", d.appName)
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 
-	// Start the logs command
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start log streaming: %w", err)
 	}
 
-	// Wait for the process to complete or timeout
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
 	}()
 
-	// Set a timeout
+	appStateChan := make(chan string, 1)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				app, err := d.cfClient.GetApp(appGUID)
+				if err != nil {
+					fmt.Fprintf(stdout, "Warning: failed to get app state: %v\n", err)
+					continue
+				}
+				
+				if app.State == "STOPPED" {
+					fmt.Fprintf(stdout, "\nPrompter app detected as STOPPED - task completed successfully\n")
+					appStateChan <- "STOPPED"
+					return
+				}
+			}
+		}
+	}()
+
 	timeout := time.After(30 * time.Minute)
 
 	select {
 	case <-timeout:
 		cmd.Process.Kill()
 		return fmt.Errorf("timeout waiting for prompter to complete")
+	case state := <-appStateChan:
+		cmd.Process.Kill()
+		if state == "STOPPED" {
+			return nil
+		}
+		return fmt.Errorf("unexpected app state: %s", state)
 	case err := <-done:
-		// Log streaming ended - this could be normal completion or error
 		if err != nil {
 			return fmt.Errorf("log streaming failed: %w", err)
 		}
