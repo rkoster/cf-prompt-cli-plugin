@@ -77,10 +77,10 @@ function validate_registry_params() {
 }
 
 function start_uaa_docker() {
-  echo "Starting UAA with nginx SSL termination proxy..."
+  echo "Starting UAA with SSL termination (CNB SSL configuration)..."
   
-  docker stop uaa nginx-ssl 2>/dev/null || true
-  docker rm uaa nginx-ssl 2>/dev/null || true
+  docker stop uaa 2>/dev/null || true
+  docker rm uaa 2>/dev/null || true
   
   # Get kind network gateway IP (static IP for UAA access from kind cluster)
   local kind_gateway_ip="172.19.0.1"
@@ -124,57 +124,53 @@ EOF
       -out "${TEMPLATES_DIR}/uaa-cert/uaa.crt"
   fi
   
-  # Start UAA on HTTP only (nginx will handle SSL termination)
+  # Make entrypoint script executable
+  chmod +x "${TEMPLATES_DIR}/uaa-cert/uaa-entrypoint.sh"
+  
+  # Start UAA with SSL enabled using CNB configuration
   docker run -d \
     --name uaa \
     --hostname uaa-172-19-0-1.local \
-    -p 8080:8080 \
+    -p 8443:8443 \
     -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
+    -v "${TEMPLATES_DIR}/uaa-cert/uaa.crt:/etc/ssl-certs/uaa.crt:ro" \
+    -v "${TEMPLATES_DIR}/uaa-cert/uaa.key:/etc/ssl-certs/uaa.key:ro" \
+    -v "${TEMPLATES_DIR}/uaa-cert/uaa-entrypoint.sh:/workspace/uaa-entrypoint.sh:ro" \
     -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
-    cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880
+    -e SERVER_PORT=8443 \
+    -e SERVER_SSL_ENABLED=true \
+    -e SERVER_SSL_KEY_STORE=/workspace/keystore.p12 \
+    -e SERVER_SSL_KEY_STORE_TYPE=PKCS12 \
+    -e SERVER_SSL_KEY_STORE_PASSWORD=changeit \
+    -e KEYSTORE_PATH=/workspace/keystore.p12 \
+    -e KEYSTORE_PASSWORD=changeit \
+    --entrypoint /workspace/uaa-entrypoint.sh \
+    cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880 \
+    /cnb/process/web
   
-  # Wait for UAA to be ready on HTTP
-  echo "Waiting for UAA HTTP server to be ready..."
-  for i in {1..30}; do
-    if curl -s http://localhost:8080/login > /dev/null 2>&1; then
-      echo "UAA is ready on HTTP!"
+  # Wait for UAA to be ready on HTTPS
+  echo "Waiting for UAA HTTPS server to be ready at 172.19.0.1:8443..."
+  for i in {1..45}; do
+    if curl -k -s https://localhost:8443/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTPS!"
       break
     fi
-    echo "Waiting for UAA to start (attempt $i/30)..."
+    if [ $i -eq 15 ] || [ $i -eq 30 ]; then
+      echo "Container logs (checking startup progress):"
+      docker logs uaa 2>&1 | tail -20
+    fi
+    echo "Waiting for UAA to start (attempt $i/45)..."
     sleep 2
   done
   
-  if ! curl -s http://localhost:8080/login > /dev/null 2>&1; then
-    echo "ERROR: UAA failed to start within 60 seconds"
+  if ! curl -k -s https://localhost:8443/login > /dev/null 2>&1; then
+    echo "ERROR: UAA failed to start within 90 seconds"
+    echo "Full container logs:"
     docker logs uaa
     exit 1
   fi
   
-  # Start nginx SSL termination proxy
-  echo "Starting nginx SSL termination proxy..."
-  docker run -d \
-    --name nginx-ssl \
-    -p 8443:8443 \
-    -v "${TEMPLATES_DIR}/nginx.conf:/etc/nginx/nginx.conf:ro" \
-    -v "${TEMPLATES_DIR}/uaa-cert/uaa.crt:/etc/ssl/certs/uaa.crt:ro" \
-    -v "${TEMPLATES_DIR}/uaa-cert/uaa.key:/etc/ssl/private/uaa.key:ro" \
-    --add-host=host.docker.internal:host-gateway \
-    nginx:alpine
-  
-  # Wait for HTTPS to be ready at gateway IP
-  echo "Waiting for nginx HTTPS proxy to be ready at 172.19.0.1:8443..."
-  for i in {1..15}; do
-    if curl -k -s https://172.19.0.1:8443/login > /dev/null 2>&1; then
-      echo "UAA is ready on HTTPS at https://172.19.0.1:8443!"
-      return 0
-    fi
-    echo "Waiting for UAA HTTPS access (attempt $i/15)..."
-    sleep 2
-  done
-  
-  echo "ERROR: nginx SSL proxy failed to start"
-  docker logs nginx-ssl
-  exit 1
+  echo "UAA is ready on HTTPS at https://172.19.0.1:8443!"
 }
 
 function prepare_uaa_oidc_config() {
@@ -190,7 +186,7 @@ function prepare_uaa_oidc_config() {
 }
 
 function connect_uaa_to_kind_network() {
-  echo "Connecting UAA containers to kind network for 172.19.0.1 access..."
+  echo "Connecting UAA container to kind network for 172.19.0.1 access..."
   
   # Ensure kind network exists
   if ! docker network inspect kind > /dev/null 2>&1; then
@@ -198,17 +194,12 @@ function connect_uaa_to_kind_network() {
     exit 1
   fi
   
-  # Connect nginx-ssl to kind network (this provides the 172.19.0.1:8443 endpoint)
-  if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
-    docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
-  fi
-  
-  # Connect UAA container as well
+  # Connect UAA container to kind network (this provides the 172.19.0.1:8443 endpoint)
   if docker ps -q -f name=uaa > /dev/null 2>&1; then
     docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
   fi
   
-  echo "UAA accessible on kind network at 172.19.0.1:8443 (nginx-ssl proxy)"
+  echo "UAA accessible on kind network at 172.19.0.1:8443 (SSL termination in UAA container)"
 }
 
 function ensure_kind_cluster() {

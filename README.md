@@ -123,6 +123,20 @@ The Korifi deployment includes UAA (User Account and Authentication) server for 
 - **Default Admin User**: admin/admin
 - **SAML Configuration**: Embedded certificates (valid until 2035)
 - **Fast Startup**: 30 seconds deployment time
+- **SSL/TLS**: UAA handles SSL termination directly using Cloud Native Buildpack configuration
+
+##### SSL Configuration
+
+UAA is configured to handle SSL/TLS termination directly without a proxy:
+
+- **Certificate Generation**: PEM certificates auto-generated with SAN (Subject Alternative Names)
+- **Keystore Conversion**: Entrypoint wrapper script converts PEM to PKCS12 keystore at runtime
+- **CNB SSL Support**: Uses standard Cloud Native Buildpack environment variables:
+  - `SERVER_PORT=8443`
+  - `SERVER_SSL_ENABLED=true`
+  - `SERVER_SSL_KEY_STORE=/workspace/keystore.p12`
+  - `SERVER_SSL_KEY_STORE_TYPE=PKCS12`
+  - `SERVER_SSL_KEY_STORE_PASSWORD=changeit`
 
 #### Testing Authentication
 
@@ -137,12 +151,13 @@ cf auth
 #### Architecture
 
 The UAA integration includes:
-- **UAA Server**: Deployed in `uaa-system` namespace with template-based configuration
+- **UAA Server**: Deployed in Docker with SSL/TLS termination using Cloud Native Buildpack configuration
 - **Gateway API**: Using Envoy Gateway for traffic routing to both Korifi and UAA
 - **SAML Support**: Pre-configured with embedded SAML certificates for immediate use
 - **Local Registry**: Docker registry for kpack builds at `localregistry-docker-registry.default.svc.cluster.local:30050`
 - **Korifi Integration**: Experimental UAA mode enabled with proper authentication flow
 - **Template-Based Deployment**: All components deployed via Kubernetes manifests in `templates/` directory
+- **SSL Configuration**: Just-in-time PKCS12 keystore generation from PEM certificates via entrypoint wrapper
 
 ## Contributing
 
