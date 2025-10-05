@@ -32,10 +32,7 @@ func (d *AppDeployer) Deploy(apiEndpoint, token, appID, spaceID, orgID, registry
 		token = token[7:]
 	}
 
-	if strings.Contains(apiEndpoint, "localhost") {
-		apiEndpoint = "https://korifi-api-svc.korifi.svc.cluster.local"
-	}
-
+	// Use original endpoint for plugin's CF client
 	client, err := cfclient.New(apiEndpoint, token)
 	if err != nil {
 		return fmt.Errorf("failed to create CF client: %w", err)
@@ -67,6 +64,12 @@ func (d *AppDeployer) Deploy(apiEndpoint, token, appID, spaceID, orgID, registry
 	manifestPath := filepath.Join(tempDir, "manifest.yml")
 	promptBase64 := base64.StdEncoding.EncodeToString([]byte(prompt))
 
+	// Use internal cluster endpoint for prompter app running inside the cluster
+	prompterApiEndpoint := apiEndpoint
+	if strings.Contains(apiEndpoint, "localhost") {
+		prompterApiEndpoint = "https://korifi-api-svc.korifi.svc.cluster.local"
+	}
+
 	manifest := fmt.Sprintf(`---
 applications:
 - name: %s
@@ -85,7 +88,7 @@ applications:
     REGISTRY_USERNAME: "%s"
     REGISTRY_PASSWORD: "%s"
     PROMPT_BASE64: "%s"
-`, d.appName, token, apiEndpoint, appID, spaceID, orgID, registryUsername, registryPassword, promptBase64)
+`, d.appName, token, prompterApiEndpoint, appID, spaceID, orgID, registryUsername, registryPassword, promptBase64)
 
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0644); err != nil {
 		return fmt.Errorf("failed to write manifest: %w", err)
@@ -139,7 +142,7 @@ func (d *AppDeployer) MonitorLogs(stdout io.Writer) error {
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ticker.C:
@@ -148,7 +151,7 @@ func (d *AppDeployer) MonitorLogs(stdout io.Writer) error {
 					fmt.Fprintf(stdout, "Warning: failed to get app state: %v\n", err)
 					continue
 				}
-				
+
 				if app.State == "STOPPED" {
 					fmt.Fprintf(stdout, "\nPrompter app detected as STOPPED - task completed successfully\n")
 					appStateChan <- "STOPPED"
