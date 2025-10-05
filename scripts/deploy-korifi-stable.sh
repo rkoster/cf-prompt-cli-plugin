@@ -98,13 +98,20 @@ function setup_macos_colima_route() {
     return 0
   fi
   
+  # Check if route already exists
+  if route -n get -net 172.30.0.0/16 >/dev/null 2>&1; then
+    echo "Route 172.30.0.0/16 already exists - skipping"
+    return 0
+  fi
+  
   echo "Adding route: 172.30.0.0/16 via $colima_ip"
   
-  # Add the route (ignore errors if route already exists)
-  if ! sudo route add -net 172.30.0.0/16 "$colima_ip" 2>/dev/null; then
-    echo "Route may already exist or failed to add"
-  else
+  # Add the route
+  if sudo route add -net 172.30.0.0/16 "$colima_ip"; then
     echo "Static route added successfully"
+  else
+    echo "Failed to add route"
+    return 1
   fi
 }
 
