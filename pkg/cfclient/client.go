@@ -1,23 +1,31 @@
 package cfclient
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/cloudfoundry/go-cfclient/v3/client"
 	"github.com/cloudfoundry/go-cfclient/v3/config"
 	"github.com/cloudfoundry/go-cfclient/v3/resource"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 type Client struct {
-	cf *client.Client
+	cf     *client.Client
+	apiURL string
 }
 
 func New(apiURL, token string) (*Client, error) {
@@ -31,7 +39,7 @@ func New(apiURL, token string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	return &Client{cf: cf}, nil
+	return &Client{cf: cf, apiURL: apiURL}, nil
 }
 
 func (c *Client) GetAppGUID(appName, spaceGUID string) (string, error) {
@@ -83,7 +91,6 @@ func (c *Client) DownloadPackage(pkg *resource.Package, destDir string) error {
 
 	// Fallback to traditional download
 	downloadURL := pkg.Links["download"].Href
-	fmt.Printf("Download URL: %s\n", downloadURL)
 
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
@@ -98,7 +105,6 @@ func (c *Client) DownloadPackage(pkg *resource.Package, destDir string) error {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("Download response status: %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download package: status %d", resp.StatusCode)
 	}
@@ -162,6 +168,21 @@ func (c *Client) unzip(src, dest string) error {
 }
 
 func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, error) {
+	// Debug: list contents of source directory
+	fmt.Printf("Creating package from source directory: %s\n", sourceDir)
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read source directory: %w", err)
+	}
+	fmt.Printf("Source directory contains %d entries:\n", len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			fmt.Printf("  [DIR]  %s\n", entry.Name())
+		} else {
+			fmt.Printf("  [FILE] %s\n", entry.Name())
+		}
+	}
+
 	pkgCreate := resource.NewPackageCreate(appGUID)
 	pkg, err := c.cf.Packages.Create(context.Background(), pkgCreate)
 	if err != nil {
@@ -174,6 +195,13 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 	}
 	defer os.Remove(zipFile)
 
+	// Debug: check zip file size
+	zipInfo, err := os.Stat(zipFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat zip file: %w", err)
+	}
+	fmt.Printf("Created zip file %s with size %d bytes\n", zipFile, zipInfo.Size())
+
 	file, err := os.Open(zipFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open zip file: %w", err)
@@ -182,12 +210,44 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 
 	uploadURL := pkg.Links["upload"].Href
 
-	req, err := http.NewRequest("POST", uploadURL, file)
+	// Fix localhost URLs by replacing with the correct API endpoint
+	if strings.Contains(uploadURL, "localhost") || strings.Contains(uploadURL, "127.0.0.1") {
+		// Extract the path from the upload URL
+		uploadPath := strings.TrimPrefix(uploadURL, "https://localhost:443")
+		uploadPath = strings.TrimPrefix(uploadPath, "http://localhost:443")
+		uploadPath = strings.TrimPrefix(uploadPath, "https://127.0.0.1:443")
+		uploadPath = strings.TrimPrefix(uploadPath, "http://127.0.0.1:443")
+		uploadURL = c.apiURL + uploadPath
+	}
+
+	// Create a multipart form upload
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+
+	// Add the bits file field
+	part, err := writer.CreateFormFile("bits", "package.zip")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	// Copy the zip file content to the form field
+	_, err = io.Copy(part, file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy zip content: %w", err)
+	}
+
+	// Close the multipart writer
+	err = writer.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", uploadURL, &requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upload request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/zip")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	httpClient := c.cf.HTTPAuthClient()
 
@@ -198,41 +258,105 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("failed to upload package: status %d", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to upload package: status %d, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	return pkg, nil
 }
 
 func (c *Client) downloadFromImage(imageURL, destDir string) error {
-	fmt.Printf("Downloading from container image: %s\n", imageURL)
-
-	// Create a temporary container to extract source
-	containerName := fmt.Sprintf("cf-prompt-extract-%d", os.Getpid())
-
-	// Try to create and copy from container
-	createCmd := exec.Command("docker", "create", "--name", containerName, imageURL)
-	if err := createCmd.Run(); err != nil {
-		return fmt.Errorf("failed to create container from image: %w", err)
+	// Parse the image reference
+	ref, err := name.ParseReference(imageURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
-	// Ensure cleanup
-	defer exec.Command("docker", "rm", containerName).Run()
+	// Create authenticator for registry
+	var auth authn.Authenticator = authn.Anonymous
 
-	// Copy files from container
-	copyCmd := exec.Command("docker", "cp", containerName+":/workspace/.", destDir)
-	if err := copyCmd.Run(); err != nil {
-		// Try alternative paths
-		copyCmd = exec.Command("docker", "cp", containerName+":/app/.", destDir)
-		if err := copyCmd.Run(); err != nil {
-			copyCmd = exec.Command("docker", "cp", containerName+":/.", destDir)
-			if err := copyCmd.Run(); err != nil {
-				return fmt.Errorf("failed to copy files from container: %w", err)
+	// Check for registry credentials in environment
+	if username := os.Getenv("REGISTRY_USERNAME"); username != "" {
+		if password := os.Getenv("REGISTRY_PASSWORD"); password != "" {
+			auth = &authn.Basic{
+				Username: username,
+				Password: password,
 			}
 		}
 	}
 
-	fmt.Printf("Successfully extracted source from container image\n")
+	// Pull the image with authentication
+	img, err := remote.Image(ref, remote.WithAuth(auth))
+	if err != nil {
+		return fmt.Errorf("failed to pull image: %w", err)
+	}
+
+	// Get the layers
+	layers, err := img.Layers()
+	if err != nil {
+		return fmt.Errorf("failed to get image layers: %w", err)
+	}
+
+	// Extract files from all layers
+	for _, layer := range layers {
+		if err := c.extractLayerToDir(layer, destDir); err != nil {
+			return fmt.Errorf("failed to extract layer: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) extractLayerToDir(layer v1.Layer, destDir string) error {
+	rc, err := layer.Uncompressed()
+	if err != nil {
+		return fmt.Errorf("failed to get layer contents: %w", err)
+	}
+	defer rc.Close()
+
+	tarReader := tar.NewReader(rc)
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar header: %w", err)
+		}
+
+		// Skip directories and non-regular files
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		// Create the destination file path
+		destPath := filepath.Join(destDir, header.Name)
+
+		// Ensure the directory exists
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+
+		// Create and write the file
+		outFile, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %w", destPath, err)
+		}
+
+		_, err = io.Copy(outFile, tarReader)
+		outFile.Close()
+
+		if err != nil {
+			return fmt.Errorf("failed to write file %s: %w", destPath, err)
+		}
+
+		// Set file permissions
+		if err := os.Chmod(destPath, os.FileMode(header.Mode)); err != nil {
+			return fmt.Errorf("failed to set permissions for %s: %w", destPath, err)
+		}
+	}
+
 	return nil
 }
 func (c *Client) zipDirectory(source, target string) error {

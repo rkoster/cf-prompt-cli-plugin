@@ -98,13 +98,13 @@ func run(config *Config) error {
 	}
 
 	fmt.Printf("Downloading package %s...\n", pkg.GUID)
-	
+
 	regClient, err := registry.NewClient(config.RegistryUsername, config.RegistryPassword)
 	if err != nil {
 		return fmt.Errorf("failed to create registry client: %w", err)
 	}
 
-	if err := regClient.DownloadPackage(pkg, workDir); err != nil {
+	if err := client.DownloadPackage(pkg, workDir); err != nil {
 		return fmt.Errorf("failed to download package: %w", err)
 	}
 

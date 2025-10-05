@@ -47,7 +47,7 @@ build: build-prompter
 # Build the prompter binary
 build-prompter:
 	@echo "Building prompter binary..."
-	devbox run -- go build -o prompter ./cmd/prompter
+	devbox run -- env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -ldflags '-extldflags "-static"' -o prompter ./cmd/prompter
 	@echo "Prompter built successfully: prompter"
 
 # Install the plugin to CF CLI
