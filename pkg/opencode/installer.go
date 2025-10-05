@@ -10,7 +10,7 @@ import (
 	"runtime"
 )
 
-const OpencodeVersion = "0.8.8"
+const OpencodeVersion = "0.14.3"
 
 func EnsureInstalled() error {
 	installDir := getInstallDir()
