@@ -168,8 +168,10 @@ func (c *Client) unzip(src, dest string) error {
 }
 
 func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, error) {
-	// Debug: list contents of source directory
-	fmt.Printf("Creating package from source directory: %s\n", sourceDir)
+	return c.CreatePackageWithPrompt(appGUID, sourceDir, "")
+}
+
+func (c *Client) CreatePackageWithPrompt(appGUID, sourceDir string, prompt string) (*resource.Package, error) {
 	entries, err := os.ReadDir(sourceDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read source directory: %w", err)
@@ -184,6 +186,13 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 	}
 
 	pkgCreate := resource.NewPackageCreate(appGUID)
+
+	if prompt != "" {
+		metadata := resource.NewMetadata()
+		metadata.SetAnnotation("cf-prompt-cli-plugin", "original-prompt", prompt)
+		pkgCreate.Metadata = metadata
+	}
+
 	pkg, err := c.cf.Packages.Create(context.Background(), pkgCreate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create package: %w", err)
@@ -195,7 +204,6 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 	}
 	defer os.Remove(zipFile)
 
-	// Debug: check zip file size
 	zipInfo, err := os.Stat(zipFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat zip file: %w", err)
@@ -210,9 +218,7 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 
 	uploadURL := pkg.Links["upload"].Href
 
-	// Fix localhost URLs by replacing with the correct API endpoint
 	if strings.Contains(uploadURL, "localhost") || strings.Contains(uploadURL, "127.0.0.1") {
-		// Extract the path from the upload URL
 		uploadPath := strings.TrimPrefix(uploadURL, "https://localhost:443")
 		uploadPath = strings.TrimPrefix(uploadPath, "http://localhost:443")
 		uploadPath = strings.TrimPrefix(uploadPath, "https://127.0.0.1:443")
@@ -220,23 +226,19 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 		uploadURL = c.apiURL + uploadPath
 	}
 
-	// Create a multipart form upload
 	var requestBody bytes.Buffer
 	writer := multipart.NewWriter(&requestBody)
 
-	// Add the bits file field
 	part, err := writer.CreateFormFile("bits", "package.zip")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
 
-	// Copy the zip file content to the form field
 	_, err = io.Copy(part, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to copy zip content: %w", err)
 	}
 
-	// Close the multipart writer
 	err = writer.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
@@ -263,6 +265,28 @@ func (c *Client) CreatePackage(appGUID, sourceDir string) (*resource.Package, er
 	}
 
 	return pkg, nil
+}
+
+func (c *Client) GetOriginalPrompt(pkg *resource.Package) (string, bool) {
+	if pkg.Metadata != nil && pkg.Metadata.Annotations != nil {
+		if prompt, exists := pkg.Metadata.Annotations["cf-prompt-cli-plugin/original-prompt"]; exists && prompt != nil {
+			return *prompt, true
+		}
+	}
+	return "", false
+}
+
+func (c *Client) ListPackagesWithPrompts(appGUID string) ([]*resource.Package, error) {
+	opts := client.NewPackageListOptions()
+	opts.AppGUIDs = client.Filter{Values: []string{appGUID}}
+	opts.OrderBy = "-created_at"
+
+	packages, err := c.cf.Packages.ListAll(context.Background(), opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list packages: %w", err)
+	}
+
+	return packages, nil
 }
 
 func (c *Client) downloadFromImage(imageURL, destDir string) error {

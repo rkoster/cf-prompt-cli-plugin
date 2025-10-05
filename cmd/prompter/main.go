@@ -123,7 +123,7 @@ func run(config *Config) error {
 	fmt.Println("================================================================================")
 
 	fmt.Println("\nCreating new package revision...")
-	if err := regClient.UploadPackage(client, config.AppID, packageDir); err != nil {
+	if err := regClient.UploadPackage(client, config.AppID, packageDir, config.Prompt); err != nil {
 		return fmt.Errorf("failed to create new package: %w", err)
 	}
 
