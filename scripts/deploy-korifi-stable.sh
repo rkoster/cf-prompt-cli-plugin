@@ -76,6 +76,57 @@ function validate_registry_params() {
   echo "$DOCKER_SERVER $DOCKER_USERNAME $DOCKER_PASSWORD $REPOSITORY_PREFIX $KPACK_BUILDER_REPOSITORY" >/dev/null
 }
 
+function start_local_registry_docker() {
+  echo "Starting local Docker registry..."
+  
+  docker stop registry 2>/dev/null || true
+  docker rm registry 2>/dev/null || true
+  
+  # Get kind network gateway IP (static IP for registry access from kind cluster)
+  local kind_gateway_ip="172.19.0.1"
+  
+  # Start registry on host port 5000
+  docker run -d \
+    --name registry \
+    --hostname registry-172-19-0-1.local \
+    -p 5000:5000 \
+    registry:2
+  
+  # Wait for registry to be ready
+  echo "Waiting for registry to be ready..."
+  for i in {1..15}; do
+    if curl -s http://localhost:5000/v2/ > /dev/null 2>&1; then
+      echo "Registry is ready on http://localhost:5000!"
+      break
+    fi
+    echo "Waiting for registry to start (attempt $i/15)..."
+    sleep 2
+  done
+  
+  if ! curl -s http://localhost:5000/v2/ > /dev/null 2>&1; then
+    echo "ERROR: Registry failed to start within 30 seconds"
+    docker logs registry
+    exit 1
+  fi
+}
+
+function connect_registry_to_kind_network() {
+  echo "Connecting registry to kind network for 172.19.0.1 access..."
+  
+  # Ensure kind network exists
+  if ! docker network inspect kind > /dev/null 2>&1; then
+    echo "ERROR: kind network does not exist. Create kind cluster first."
+    exit 1
+  fi
+  
+  # Connect registry to kind network (this provides the 172.19.0.1:5000 endpoint)
+  if docker ps -q -f name=registry > /dev/null 2>&1; then
+    docker network connect kind registry 2>/dev/null || echo "registry already connected to kind network"
+  fi
+  
+  echo "Registry accessible on kind network at 172.19.0.1:5000"
+}
+
 function start_uaa_docker() {
   echo "Starting UAA with nginx SSL termination proxy..."
   
@@ -267,8 +318,8 @@ nodes:
     cgroupDriver: systemd
 containerdConfigPatches:
 - |-
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
-    endpoint = ["http://host.docker.internal:5001"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."172.19.0.1:5000"]
+    endpoint = ["http://172.19.0.1:5000"]
 EOF
     kind create cluster --name "$CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 5m
     
@@ -288,6 +339,9 @@ function deploy_korifi() {
   # Wait for the installation job to complete
   echo "Waiting for Korifi installation job to complete..."
   kubectl wait --for=condition=Complete job/install-korifi -n korifi-installer --timeout=15m
+  
+  # Apply registry credentials for external Docker registry
+  kubectl apply -f "$TEMPLATES_DIR/localregistry-docker-registry.yaml"
   
   # Apply our custom UAA-enabled configuration
   kubectl create configmap korifi-api-config --from-file="$TEMPLATES_DIR/korifi_config.yaml" -n korifi --dry-run=client -o yaml | kubectl apply -f -
@@ -312,13 +366,18 @@ function configure_uaa_rbac() {
 
 function main() {
   parse_cmdline_args "$@"
+  start_local_registry_docker
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
+  connect_registry_to_kind_network
   deploy_korifi
   configure_uaa_rbac
 
   echo ""
   echo "✅ Korifi with UAA deployment completed successfully!"
+  echo ""
+  echo "Local Registry:"
+  echo "  - Registry URL: http://172.19.0.1:5000"
   echo ""
   echo "UAA Access:"
   echo "  - UAA URL: https://172.19.0.1:8443/uaa"

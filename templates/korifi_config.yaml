@@ -19,7 +19,7 @@ defaultLifecycleConfig:
   type: buildpack
   stack: cflinuxfs3
   stagingMemoryMB: 0
-containerRepositoryPrefix: "localregistry-docker-registry.default.svc.cluster.local:30050/"
+containerRepositoryPrefix: "172.19.0.1:5000/"
 packageRegistrySecretNames:
 - "image-registry-credentials"
 defaultDomainName: apps-127-0-0-1.nip.io

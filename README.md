@@ -76,7 +76,7 @@ make test
 │   ├── uaa-config-updated.yaml # UAA server configuration with embedded SAML
 │   ├── uaa-deployment-fixed.yaml # UAA deployment manifest
 │   ├── uaa-httproute.yaml  # UAA HTTP routing configuration
-│   └── localregistry-docker-registry.yaml # Local Docker registry setup
+│   └── localregistry-docker-registry.yaml # Registry credentials for external Docker registry
 ├── scripts/                # Deployment and build scripts
 │   └── deploy-korifi-stable.sh # Complete Korifi+UAA deployment script
 ├── main.go                 # Plugin entry point
@@ -104,11 +104,12 @@ make clean-korifi
 - **`templates/uaa-config-updated.yaml`**: UAA configuration with embedded SAML certificates (valid until 2035)
 - **`templates/uaa-deployment-fixed.yaml`**: UAA server deployment with optimized startup
 - **`templates/korifi_config.yaml`**: Korifi configuration with UAA integration enabled
-- **`templates/localregistry-docker-registry.yaml`**: Local Docker registry for kpack builds
+- **`templates/localregistry-docker-registry.yaml`**: Registry credentials for external Docker registry at 172.19.0.1:5000
 
 #### Deployment Process
 
-1. **Cluster Setup**: Creates kind cluster and local Docker registry
+1. **External Services**: Starts local Docker registry and UAA server outside of k8s cluster
+2. **Cluster Setup**: Creates kind cluster with access to external registry and UAA
 2. **Dependencies**: Installs cert-manager, Gateway API, Envoy Gateway, and kpack
 3. **UAA Deployment**: Deploys UAA server with pre-configured SAML (30 second startup)
 4. **Korifi Deployment**: Installs Korifi v0.16.0 with UAA integration enabled
@@ -137,10 +138,10 @@ cf auth
 #### Architecture
 
 The UAA integration includes:
-- **UAA Server**: Deployed in `uaa-system` namespace with template-based configuration
-- **Gateway API**: Using Envoy Gateway for traffic routing to both Korifi and UAA
+- **External Docker Registry**: Running at `172.19.0.1:5000` (outside k8s cluster, accessed via kind gateway IP)
+- **UAA Server**: Running at `172.19.0.1:8443` with nginx SSL termination (outside k8s cluster)
+- **Gateway API**: Using Envoy Gateway for traffic routing to Korifi
 - **SAML Support**: Pre-configured with embedded SAML certificates for immediate use
-- **Local Registry**: Docker registry for kpack builds at `localregistry-docker-registry.default.svc.cluster.local:30050`
 - **Korifi Integration**: Experimental UAA mode enabled with proper authentication flow
 - **Template-Based Deployment**: All components deployed via Kubernetes manifests in `templates/` directory
 
