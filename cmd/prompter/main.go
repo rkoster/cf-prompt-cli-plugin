@@ -23,6 +23,11 @@ type Config struct {
 }
 
 func main() {
+	if err := opencode.EnsureInstalled(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error installing opencode: %v\n", err)
+		os.Exit(1)
+	}
+
 	config, err := loadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
