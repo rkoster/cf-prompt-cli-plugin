@@ -383,6 +383,22 @@ func (c *Client) extractLayerToDir(layer v1.Layer, destDir string) error {
 
 	return nil
 }
+func (c *Client) GetApp(appGUID string) (*resource.App, error) {
+	app, err := c.cf.Applications.Get(context.Background(), appGUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get app: %w", err)
+	}
+	return app, nil
+}
+
+func (c *Client) StopApp(appGUID string) error {
+	_, err := c.cf.Applications.Stop(context.Background(), appGUID)
+	if err != nil {
+		return fmt.Errorf("failed to stop app: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) zipDirectory(source, target string) error {
 	zipfile, err := os.Create(target)
 	if err != nil {
