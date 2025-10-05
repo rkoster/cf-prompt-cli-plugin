@@ -19,11 +19,7 @@ func (p *PromptPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 
 	switch args[0] {
 	case "prompt":
-		if len(args) > 1 && args[1] == "package" {
-			cmd.PromptPackageCommand(cliConnection, args[2:])
-		} else {
-			cmd.PromptCommand(cliConnection, args[1:])
-		}
+		cmd.PromptCommand(cliConnection, args[1:])
 	default:
 		fmt.Printf("Error: Unknown command '%s'\n", args[0])
 		os.Exit(1)
@@ -48,7 +44,7 @@ func (p *PromptPlugin) GetMetadata() plugin.PluginMetadata {
 				Name:     "prompt",
 				HelpText: "Execute a natural language prompt as a CF task",
 				UsageDetails: plugin.Usage{
-					Usage: "cf prompt [prompt text]\n   cf prompt package [prompt text]",
+					Usage: "cf prompt [prompt text]",
 					Options: map[string]string{
 						"app": "Target application name",
 					},
