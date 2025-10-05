@@ -131,12 +131,9 @@ UAA is configured to handle SSL/TLS termination directly without a proxy:
 
 - **Certificate Generation**: PEM certificates auto-generated with SAN (Subject Alternative Names)
 - **Keystore Conversion**: Entrypoint wrapper script converts PEM to PKCS12 keystore at runtime
-- **CNB SSL Support**: Uses standard Cloud Native Buildpack environment variables:
-  - `SERVER_PORT=8443`
-  - `SERVER_SSL_ENABLED=true`
-  - `SERVER_SSL_KEY_STORE=/workspace/keystore.p12`
-  - `SERVER_SSL_KEY_STORE_TYPE=PKCS12`
-  - `SERVER_SSL_KEY_STORE_PASSWORD=changeit`
+- **Tomcat SSL Configuration**: The entrypoint script modifies Tomcat's `server.xml` at container startup to configure the HTTPS connector on port 8443
+- **Architecture**: UAA runs on Tomcat (provided by Tanzu Apache Tomcat buildpack), not Spring Boot embedded server
+- **Configuration Method**: Direct Tomcat connector configuration with keystore path, password, and TLS settings
 
 #### Testing Authentication
 
@@ -151,13 +148,13 @@ cf auth
 #### Architecture
 
 The UAA integration includes:
-- **UAA Server**: Deployed in Docker with SSL/TLS termination using Cloud Native Buildpack configuration
+- **UAA Server**: Deployed in Docker with SSL/TLS termination via runtime Tomcat server.xml modification
 - **Gateway API**: Using Envoy Gateway for traffic routing to both Korifi and UAA
 - **SAML Support**: Pre-configured with embedded SAML certificates for immediate use
 - **Local Registry**: Docker registry for kpack builds at `localregistry-docker-registry.default.svc.cluster.local:30050`
 - **Korifi Integration**: Experimental UAA mode enabled with proper authentication flow
 - **Template-Based Deployment**: All components deployed via Kubernetes manifests in `templates/` directory
-- **SSL Configuration**: Just-in-time PKCS12 keystore generation from PEM certificates via entrypoint wrapper
+- **SSL Configuration**: Just-in-time keystore generation from PEM certificates and Tomcat connector configuration via entrypoint wrapper
 
 ## Contributing
 

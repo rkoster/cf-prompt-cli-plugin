@@ -28,10 +28,23 @@ else
     echo "Keystore already exists at $KEYSTORE_PATH, skipping generation"
 fi
 
-echo "=== Starting UAA with SSL configuration ==="
-echo "  SERVER_PORT: ${SERVER_PORT:-8443}"
-echo "  SERVER_SSL_ENABLED: ${SERVER_SSL_ENABLED:-true}"
-echo "  SERVER_SSL_KEY_STORE: ${SERVER_SSL_KEY_STORE:-$KEYSTORE_PATH}"
-echo "  SERVER_SSL_KEY_STORE_TYPE: ${SERVER_SSL_KEY_STORE_TYPE:-PKCS12}"
+echo "=== Configuring Tomcat for SSL ==="
+SERVER_XML="/layers/tanzu-buildpacks_apache-tomcat/catalina-base/conf/server.xml"
+
+if [ -f "$SERVER_XML" ]; then
+    echo "Modifying Tomcat server.xml to enable SSL..."
+    
+    # Backup original
+    cp "$SERVER_XML" "$SERVER_XML.bak"
+    
+    # Replace HTTP connector with HTTPS connector
+    sed -i 's|<Connector port='"'"'8080'"'"'|<Connector port="8443" protocol="org.apache.coyote.http11.Http11NioProtocol" SSLEnabled="true" scheme="https" secure="true" keystoreFile="'"$KEYSTORE_PATH"'" keystorePass="'"$KEYSTORE_PASSWORD"'" keystoreType="PKCS12" clientAuth="false" sslProtocol="TLS"|' "$SERVER_XML"
+    
+    echo "Tomcat SSL configuration complete!"
+    echo "  Keystore: $KEYSTORE_PATH"
+    echo "  Port: 8443"
+else
+    echo "WARNING: Tomcat server.xml not found at $SERVER_XML"
+fi
 
 exec "$@"
