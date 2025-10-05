@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -9,7 +11,12 @@ import (
 	"github.com/ruben/cf-prompt-cli-plugin/pkg/cfclient"
 )
 
-// simpleTable provides CF CLI compatible table formatting
+func shortHash(guid string) string {
+	hash := sha256.Sum256([]byte(guid))
+	hexHash := hex.EncodeToString(hash[:])
+	return hexHash[:7]
+}
+
 type simpleTable struct {
 	headers     []string
 	rows        [][]string
@@ -141,10 +148,10 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 		return
 	}
 
-	// Prepare table data
-	table := newSimpleTable([]string{"state", "created", "type", "original prompt"})
+	table := newSimpleTable([]string{"hash", "state", "created", "type", "original prompt"})
 
 	for _, pkg := range packages {
+		hash := shortHash(pkg.GUID)
 		createdAt := pkg.CreatedAt.Format("2006-01-02 15:04:05")
 
 		prompt, hasPrompt := client.GetOriginalPrompt(pkg)
@@ -156,9 +163,8 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 			prompt = prompt[:47] + "..."
 		}
 
-		// Use lowercase state
 		state := strings.ToLower(string(pkg.State))
-		table.addRow(state, createdAt, pkg.Type, prompt)
+		table.addRow(hash, state, createdAt, pkg.Type, prompt)
 	}
 
 	table.print()
