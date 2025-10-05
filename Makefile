@@ -37,7 +37,9 @@ help:
 	@echo "  echo -e \"admin\\nadmin\" | CF_TRACE=true cf login -a https://localhost:443"
 
 # Build the plugin
-build:
+build: build-prompter
+	@echo "Copying prompter binary for embedding..."
+	cp prompter pkg/prompter/prompter
 	@echo "Building CF prompt plugin..."
 	devbox run -- go build -o $(PLUGIN_BINARY)
 	@echo "Plugin built successfully: $(PLUGIN_BINARY)"
@@ -75,6 +77,8 @@ integration-test: install
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -f $(PLUGIN_BINARY)
+	rm -f prompter
+	rm -f pkg/prompter/prompter
 
 # Deploy Korifi using stable release with UAA
 deploy-korifi:
