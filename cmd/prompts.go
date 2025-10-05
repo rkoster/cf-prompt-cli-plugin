@@ -127,7 +127,12 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 		os.Exit(1)
 	}
 
-	// Get current org and user info to match cf apps format
+	currentPackageGUID, err := client.GetCurrentDropletPackageGUID(appGUID)
+	if err != nil {
+		fmt.Printf("Error getting current droplet package: %v\n", err)
+		os.Exit(1)
+	}
+
 	currentOrg, err := cliConnection.GetCurrentOrg()
 	if err != nil {
 		fmt.Printf("Error getting current org: %v\n", err)
@@ -140,7 +145,6 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 		os.Exit(1)
 	}
 
-	// Print header like cf apps
 	fmt.Printf("Getting packages for app %s in org %s / space %s as %s...\n\n", appName, currentOrg.Name, currentSpace.Name, username)
 
 	if len(packages) == 0 {
@@ -152,6 +156,11 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 
 	for _, pkg := range packages {
 		hash := shortHash(pkg.GUID)
+
+		if currentPackageGUID != "" && pkg.GUID == currentPackageGUID {
+			hash = hash + "*"
+		}
+
 		createdAt := pkg.CreatedAt.Format("2006-01-02 15:04:05")
 
 		prompt, hasPrompt := client.GetOriginalPrompt(pkg)
