@@ -14,12 +14,14 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 	if len(args) == 0 {
 		fmt.Println("Error: No prompt provided")
 		fmt.Println("Usage: cf prompt [--app APP_NAME] [prompt text]")
+		fmt.Println("   or: cf prompt APP_NAME [prompt text]")
 		os.Exit(1)
 	}
 
 	var app string
 	var promptArgs []string
 
+	// Parse arguments - support both --app flag and positional app name
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--app" && i+1 < len(args) {
 			app = args[i+1]
@@ -29,9 +31,35 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 		}
 	}
 
+	// If no --app flag was used, check if first argument is an app name
+	if app == "" && len(promptArgs) > 0 {
+		potentialAppName := promptArgs[0]
+
+		// Check if this looks like an app name (exists in current space)
+		currentSpace, err := cliConnection.GetCurrentSpace()
+		if err == nil {
+			apiEndpoint, err := cliConnection.ApiEndpoint()
+			if err == nil {
+				token, err := cliConnection.AccessToken()
+				if err == nil {
+					client, err := cfclient.New(apiEndpoint, token)
+					if err == nil {
+						_, err := client.GetAppGUID(potentialAppName, currentSpace.Guid)
+						if err == nil {
+							// Found the app, use it as app name and remove from prompt args
+							app = potentialAppName
+							promptArgs = promptArgs[1:]
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if len(promptArgs) == 0 {
 		fmt.Println("Error: No prompt provided")
 		fmt.Println("Usage: cf prompt [--app APP_NAME] [prompt text]")
+		fmt.Println("   or: cf prompt APP_NAME [prompt text]")
 		os.Exit(1)
 	}
 
@@ -90,14 +118,14 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 	if registryUsername == "" {
 		registryUsername = "user"
 	}
-	
+
 	registryPassword := os.Getenv("REGISTRY_PASSWORD")
 	if registryPassword == "" {
 		registryPassword = "password"
 	}
 
 	deployer := prompter.NewAppDeployer(cliConnection)
-	
+
 	if err := deployer.Deploy(
 		apiEndpoint,
 		token,
