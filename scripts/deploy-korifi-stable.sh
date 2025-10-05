@@ -76,6 +76,39 @@ function validate_registry_params() {
   echo "$DOCKER_SERVER $DOCKER_USERNAME $DOCKER_PASSWORD $REPOSITORY_PREFIX $KPACK_BUILDER_REPOSITORY" >/dev/null
 }
 
+function ensure_kind_network() {
+  local expected_subnet="172.30.0.0/16"
+  local expected_gateway="172.30.0.1"
+  
+  # Check if kind network exists
+  if docker network inspect kind >/dev/null 2>&1; then
+    # Network exists, validate subnet
+    local current_subnet=$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
+    
+    if [ "$current_subnet" != "$expected_subnet" ]; then
+      echo "ERROR: kind network exists with incorrect subnet: $current_subnet"
+      echo ""
+      echo "Expected subnet: $expected_subnet"
+      echo ""
+      echo "Please delete the kind network and try again:"
+      echo "  1. Delete any existing kind clusters: kind delete cluster --name <cluster-name>"
+      echo "  2. Delete the kind network: docker network rm kind"
+      echo "  3. Re-run this script"
+      exit 1
+    fi
+    
+    echo "kind network validated with correct subnet: $expected_subnet"
+  else
+    # Network doesn't exist, create it with correct subnet
+    echo "Creating kind network with subnet $expected_subnet..."
+    docker network create kind \
+      --driver=bridge \
+      --subnet="$expected_subnet" \
+      --gateway="$expected_gateway"
+    echo "kind network created successfully"
+  fi
+}
+
 function start_uaa_docker() {
   echo "Starting UAA with nginx SSL termination proxy..."
   
@@ -83,14 +116,14 @@ function start_uaa_docker() {
   docker rm uaa nginx-ssl 2>/dev/null || true
   
   # Get kind network gateway IP (static IP for UAA access from kind cluster)
-  local kind_gateway_ip="172.19.0.1"
+  local kind_gateway_ip="172.30.0.1"
   
   # Ensure SSL certificate directory exists
   mkdir -p "${TEMPLATES_DIR}/uaa-cert"
   
   # Generate SSL certificate with SAN including both hostname and gateway IP
   if [ ! -f "${TEMPLATES_DIR}/uaa-cert/uaa.crt" ]; then
-    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP 172.19.0.1)..."
+    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP 172.30.0.1)..."
     cat > "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" <<EOF
 [req]
 default_bits = 2048
@@ -101,7 +134,7 @@ req_extensions = req_ext
 x509_extensions = v3_ca
 
 [dn]
-CN = 172.19.0.1
+CN = 172.30.0.1
 
 [req_ext]
 subjectAltName = @alt_names
@@ -115,7 +148,7 @@ extendedKeyUsage = serverAuth
 [alt_names]
 DNS.1 = localhost
 IP.1 = 127.0.0.1
-IP.2 = 172.19.0.1
+IP.2 = 172.30.0.1
 EOF
     
     openssl req -new -x509 -nodes -days 365 \
@@ -166,10 +199,10 @@ EOF
     nginx:alpine
   
   # Wait for HTTPS to be ready at gateway IP
-  echo "Waiting for nginx HTTPS proxy to be ready at 172.19.0.1:8443..."
+  echo "Waiting for nginx HTTPS proxy to be ready at 172.30.0.1:8443..."
   for i in {1..15}; do
-    if curl -k -s https://172.19.0.1:8443/login > /dev/null 2>&1; then
-      echo "UAA is ready on HTTPS at https://172.19.0.1:8443!"
+    if curl -k -s https://172.30.0.1:8443/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTPS at https://172.30.0.1:8443!"
       return 0
     fi
     echo "Waiting for UAA HTTPS access (attempt $i/15)..."
@@ -194,7 +227,7 @@ function prepare_uaa_oidc_config() {
 }
 
 function connect_uaa_to_kind_network() {
-  echo "Connecting UAA containers to kind network for 172.19.0.1 access..."
+  echo "Connecting UAA containers to kind network for 172.30.0.1 access..."
   
   # Ensure kind network exists
   if ! docker network inspect kind > /dev/null 2>&1; then
@@ -202,7 +235,7 @@ function connect_uaa_to_kind_network() {
     exit 1
   fi
   
-  # Connect nginx-ssl to kind network (this provides the 172.19.0.1:8443 endpoint)
+  # Connect nginx-ssl to kind network (this provides the 172.30.0.1:8443 endpoint)
   if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
     docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
   fi
@@ -212,7 +245,7 @@ function connect_uaa_to_kind_network() {
     docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
   fi
   
-  echo "UAA accessible on kind network at 172.19.0.1:8443 (nginx-ssl proxy)"
+  echo "UAA accessible on kind network at 172.30.0.1:8443 (nginx-ssl proxy)"
 }
 
 function ensure_kind_cluster() {
@@ -245,7 +278,7 @@ nodes:
           mountPath: /etc/uaa-oidc
           readOnly: true
       extraArgs:
-        oidc-issuer-url: https://172.19.0.1:8443/oauth/token
+        oidc-issuer-url: https://172.30.0.1:8443/oauth/token
         oidc-client-id: cf
         oidc-username-claim: user_name
         oidc-username-prefix: "uaa:"
@@ -317,6 +350,7 @@ function configure_uaa_rbac() {
 
 function main() {
   parse_cmdline_args "$@"
+  ensure_kind_network
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
@@ -326,7 +360,7 @@ function main() {
   echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
   echo "UAA Access:"
-  echo "  - UAA URL: https://172.19.0.1:8443/uaa"
+  echo "  - UAA URL: https://172.30.0.1:8443/uaa"
   echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"
