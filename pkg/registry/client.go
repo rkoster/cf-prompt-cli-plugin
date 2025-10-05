@@ -119,10 +119,10 @@ func (c *Client) extractImage(img v1.Image, destDir string) error {
 	return nil
 }
 
-func (c *Client) UploadPackage(client *cfclient.Client, appGUID string, sourceDir string) error {
+func (c *Client) UploadPackage(client *cfclient.Client, appGUID string, sourceDir string, prompt string) error {
 	fmt.Printf("Creating package from directory: %s\n", sourceDir)
 
-	pkg, err := client.CreatePackage(appGUID, sourceDir)
+	pkg, err := client.CreatePackageWithPrompt(appGUID, sourceDir, prompt)
 	if err != nil {
 		return fmt.Errorf("failed to create package: %w", err)
 	}

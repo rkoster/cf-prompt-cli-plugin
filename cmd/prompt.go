@@ -3,76 +3,52 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"code.cloudfoundry.org/cli/plugin"
 	"github.com/ruben/cf-prompt-cli-plugin/pkg/cfclient"
 	"github.com/ruben/cf-prompt-cli-plugin/pkg/prompter"
 )
 
-func PromptCommand(cliConnection plugin.CliConnection, args []string) {
+// ParsePromptArgs parses command line arguments and returns app name, prompt text, and whether parsing failed
+func ParsePromptArgs(args []string) (app string, prompt string, failed bool) {
 	if len(args) == 0 {
-		fmt.Println("Error: No prompt provided")
-		fmt.Println("Usage: cf prompt [--app APP_NAME] [prompt text]")
-		fmt.Println("   or: cf prompt APP_NAME [prompt text]")
-		os.Exit(1)
+		return "", "", true
 	}
 
-	var app string
-	var promptArgs []string
+	var nonFlagArgs []string
 
-	// Parse arguments - support both --app flag and positional app name
+	// Parse arguments - support -a for app name and -p for prompt
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--app" && i+1 < len(args) {
+		if (args[i] == "--app" || args[i] == "-a") && i+1 < len(args) {
 			app = args[i+1]
 			i++
+		} else if (args[i] == "--prompt" || args[i] == "-p") && i+1 < len(args) {
+			prompt = args[i+1]
+			i++
 		} else {
-			promptArgs = append(promptArgs, args[i])
+			nonFlagArgs = append(nonFlagArgs, args[i])
 		}
 	}
 
-	// If no --app flag was used, check if first argument is an app name
-	if app == "" && len(promptArgs) > 0 {
-		potentialAppName := promptArgs[0]
-
-		// Check if this looks like an app name (exists in current space)
-		currentSpace, err := cliConnection.GetCurrentSpace()
-		if err == nil {
-			apiEndpoint, err := cliConnection.ApiEndpoint()
-			if err == nil {
-				token, err := cliConnection.AccessToken()
-				if err == nil {
-					client, err := cfclient.New(apiEndpoint, token)
-					if err == nil {
-						_, err := client.GetAppGUID(potentialAppName, currentSpace.Guid)
-						if err == nil {
-							// Found the app, use it as app name and remove from prompt args
-							app = potentialAppName
-							promptArgs = promptArgs[1:]
-						}
-					}
-				}
-			}
-		}
+	// If no -a flag was used, treat first non-flag argument as app name
+	if app == "" && len(nonFlagArgs) > 0 {
+		app = nonFlagArgs[0]
 	}
 
-	if len(promptArgs) == 0 {
-		fmt.Println("Error: No prompt provided")
-		fmt.Println("Usage: cf prompt [--app APP_NAME] [prompt text]")
-		fmt.Println("   or: cf prompt APP_NAME [prompt text]")
+	if app == "" || prompt == "" {
+		return "", "", true
+	}
+
+	return app, prompt, false
+}
+
+func PromptCommand(cliConnection plugin.CliConnection, args []string) {
+	app, prompt, failed := ParsePromptArgs(args)
+	if failed {
+		fmt.Println("Error: Invalid arguments")
+		fmt.Println("Usage: cf prompt APP_NAME -p 'prompt text'")
+		fmt.Println("   or: cf prompt -a APP_NAME -p 'prompt text'")
 		os.Exit(1)
-	}
-
-	prompt := strings.Join(promptArgs, " ")
-
-	if app == "" {
-		var err error
-		app, err = getCurrentApp(cliConnection)
-		if err != nil {
-			fmt.Printf("Error getting current app: %v\n", err)
-			fmt.Println("Please specify an app with --app APP_NAME or target an app first")
-			os.Exit(1)
-		}
 	}
 
 	fmt.Printf("Executing prompt on package for app: %s\n", app)
