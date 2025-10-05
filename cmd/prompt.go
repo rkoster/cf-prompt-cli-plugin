@@ -87,7 +87,14 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 	}
 
 	registryUsername := os.Getenv("REGISTRY_USERNAME")
+	if registryUsername == "" {
+		registryUsername = "user"
+	}
+	
 	registryPassword := os.Getenv("REGISTRY_PASSWORD")
+	if registryPassword == "" {
+		registryPassword = "password"
+	}
 
 	deployer := prompter.NewAppDeployer(cliConnection)
 	

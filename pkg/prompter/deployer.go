@@ -41,6 +41,12 @@ func (d *AppDeployer) Deploy(apiEndpoint, token, appID, spaceID, orgID, registry
 		return fmt.Errorf("failed to write prompter binary: %w", err)
 	}
 
+	procfilePath := filepath.Join(tempDir, "Procfile")
+	procfile := "web: ./prompter\n"
+	if err := os.WriteFile(procfilePath, []byte(procfile), 0644); err != nil {
+		return fmt.Errorf("failed to write Procfile: %w", err)
+	}
+
 	manifestPath := filepath.Join(tempDir, "manifest.yml")
 	promptBase64 := base64.StdEncoding.EncodeToString([]byte(prompt))
 	
@@ -52,7 +58,8 @@ applications:
   instances: 1
   no-route: true
   health-check-type: process
-  command: ./prompter
+  buildpacks:
+  - procfile_buildpack
   env:
     CF_ACCESS_TOKEN: %s
     CF_API: %s
