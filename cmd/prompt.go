@@ -3,12 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"code.cloudfoundry.org/cli/plugin"
 	"github.com/ruben/cf-prompt-cli-plugin/pkg/cfclient"
-	"github.com/ruben/cf-prompt-cli-plugin/pkg/opencode"
+	"github.com/ruben/cf-prompt-cli-plugin/pkg/prompter"
 )
 
 func PromptCommand(cliConnection plugin.CliConnection, args []string) {
@@ -69,6 +68,12 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 		os.Exit(1)
 	}
 
+	currentOrg, err := cliConnection.GetCurrentOrg()
+	if err != nil {
+		fmt.Printf("Error getting current org: %v\n", err)
+		os.Exit(1)
+	}
+
 	client, err := cfclient.New(apiEndpoint, token)
 	if err != nil {
 		fmt.Printf("Error creating CF client: %v\n", err)
@@ -81,47 +86,42 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 		os.Exit(1)
 	}
 
-	pkg, err := client.GetLatestPackage(appGUID)
-	if err != nil {
-		fmt.Printf("Error getting latest package: %v\n", err)
+	registryUsername := os.Getenv("REGISTRY_USERNAME")
+	if registryUsername == "" {
+		registryUsername = "user"
+	}
+	
+	registryPassword := os.Getenv("REGISTRY_PASSWORD")
+	if registryPassword == "" {
+		registryPassword = "password"
+	}
+
+	deployer := prompter.NewAppDeployer(cliConnection)
+	
+	if err := deployer.Deploy(
+		apiEndpoint,
+		token,
+		appGUID,
+		currentSpace.Guid,
+		currentOrg.Guid,
+		registryUsername,
+		registryPassword,
+		prompt,
+	); err != nil {
+		fmt.Printf("Error deploying prompter app: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Found package: %s\n", pkg.GUID)
+	defer func() {
+		if err := deployer.Cleanup(); err != nil {
+			fmt.Printf("Warning: Failed to cleanup prompter app: %v\n", err)
+		}
+	}()
 
-	workDir, err := os.MkdirTemp("", "cf-prompt-package-*")
-	if err != nil {
-		fmt.Printf("Error creating temp directory: %v\n", err)
-		os.Exit(1)
-	}
-	defer os.RemoveAll(workDir)
-
-	fmt.Printf("Downloading and unpacking package to: %s\n", workDir)
-	if err := client.DownloadPackage(pkg, workDir); err != nil {
-		fmt.Printf("Error downloading package: %v\n", err)
+	if err := deployer.MonitorLogs(os.Stdout); err != nil {
+		fmt.Printf("Error monitoring logs: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Package downloaded and unpacked successfully")
-
-	packageDir := filepath.Join(workDir, "app")
-	if _, err := os.Stat(packageDir); os.IsNotExist(err) {
-		packageDir = workDir
-	}
-
-	fmt.Println("Executing opencode run...")
-	if err := opencode.Run(packageDir, prompt, os.Stdout); err != nil {
-		fmt.Printf("Error running opencode: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("\nCreating new package revision...")
-	newPkg, err := client.CreatePackage(appGUID, packageDir)
-	if err != nil {
-		fmt.Printf("Error creating package: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("New package created: %s\n", newPkg.GUID)
-	fmt.Println("Prompt execution on package completed successfully")
+	fmt.Println("Prompt execution completed successfully")
 }
