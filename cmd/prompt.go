@@ -11,10 +11,10 @@ import (
 	"github.com/ruben/cf-prompt-cli-plugin/pkg/opencode"
 )
 
-func PromptPackageCommand(cliConnection plugin.CliConnection, args []string) {
+func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 	if len(args) == 0 {
 		fmt.Println("Error: No prompt provided")
-		fmt.Println("Usage: cf prompt package [--app APP_NAME] [prompt text]")
+		fmt.Println("Usage: cf prompt [--app APP_NAME] [prompt text]")
 		os.Exit(1)
 	}
 
@@ -32,7 +32,7 @@ func PromptPackageCommand(cliConnection plugin.CliConnection, args []string) {
 
 	if len(promptArgs) == 0 {
 		fmt.Println("Error: No prompt provided")
-		fmt.Println("Usage: cf prompt package [--app APP_NAME] [prompt text]")
+		fmt.Println("Usage: cf prompt [--app APP_NAME] [prompt text]")
 		os.Exit(1)
 	}
 
