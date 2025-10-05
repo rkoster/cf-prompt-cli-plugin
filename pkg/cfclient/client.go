@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 type Client struct {
 	cf     *client.Client
 	apiURL string
+	token  string
 }
 
 func New(apiURL, token string) (*Client, error) {
@@ -39,7 +41,11 @@ func New(apiURL, token string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	return &Client{cf: cf, apiURL: apiURL}, nil
+	return &Client{
+		cf:     cf,
+		apiURL: apiURL,
+		token:  token,
+	}, nil
 }
 
 func (c *Client) GetAppGUID(appName, spaceGUID string) (string, error) {
@@ -400,24 +406,54 @@ func (c *Client) StopApp(appGUID string) error {
 }
 
 func (c *Client) GetCurrentDropletPackageGUID(appGUID string) (string, error) {
-	app, err := c.cf.Applications.Get(context.Background(), appGUID)
+	// Construct the URL for the current droplet endpoint
+	url := fmt.Sprintf("%s/v3/apps/%s/droplets/current", c.apiURL, appGUID)
+
+	// Create a new HTTP request
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to get app: %w", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if app.Relationships.CurrentDroplet.Data == nil || app.Relationships.CurrentDroplet.Data.GUID == "" {
+	// The token from CF CLI already includes "bearer " prefix
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Accept", "application/json")
+
+	// Make the request with TLS verification disabled
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
 		return "", nil
 	}
 
-	droplet, err := c.cf.Droplets.Get(context.Background(), app.Relationships.CurrentDroplet.Data.GUID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get droplet: %w", err)
+	if resp.StatusCode != 200 {
+		return "", nil
 	}
 
-	if packageLink, exists := droplet.Links["package"]; exists && packageLink.Href != "" {
-		parts := strings.Split(packageLink.Href, "/")
-		if len(parts) > 0 {
-			return parts[len(parts)-1], nil
+	var droplet map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&droplet); err != nil {
+		return "", fmt.Errorf("failed to decode droplet: %w", err)
+	}
+
+	// Extract package GUID from links
+	if links, ok := droplet["links"].(map[string]interface{}); ok {
+		if packageLink, ok := links["package"].(map[string]interface{}); ok {
+			if href, ok := packageLink["href"].(string); ok {
+				parts := strings.Split(href, "/")
+				if len(parts) > 0 {
+					packageGUID := parts[len(parts)-1]
+					return packageGUID, nil
+				}
+			}
 		}
 	}
 
