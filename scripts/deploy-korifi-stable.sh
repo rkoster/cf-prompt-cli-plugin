@@ -125,12 +125,16 @@ EOF
   fi
   
   # Start UAA on HTTP only (nginx will handle SSL termination)
+  # Configure Tomcat to trust X-Forwarded-* headers from nginx proxy
   docker run -d \
     --name uaa \
     --hostname uaa-172-19-0-1.local \
     -p 8080:8080 \
     -v "${TEMPLATES_DIR}/uaa:/etc/config:ro" \
     -e JAVA_OPTS="-Dspring_profiles=hsqldb -Djava.security.egd=file:/dev/./urandom -DCLOUDFOUNDRY_CONFIG_PATH=/etc/config" \
+    -e SERVER_TOMCAT_REMOTEIP_PROTOCOL_HEADER="X-Forwarded-Proto" \
+    -e SERVER_TOMCAT_REMOTEIP_PORT_HEADER="X-Forwarded-Port" \
+    -e SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES=".*" \
     cloudfoundry/uaa@sha256:7f080becfe62a71fe0429c62ad8afdf4f24e0aac94d9f226531ab3001fa35880
   
   # Wait for UAA to be ready on HTTP
@@ -241,7 +245,7 @@ nodes:
           mountPath: /etc/uaa-oidc
           readOnly: true
       extraArgs:
-        oidc-issuer-url: https://172.19.0.1:8443/uaa
+        oidc-issuer-url: https://172.19.0.1:8443/oauth/token
         oidc-client-id: cf
         oidc-username-claim: user_name
         oidc-username-prefix: "uaa:"
@@ -298,36 +302,11 @@ function deploy_korifi() {
   echo "Korifi deployment completed!"
 }
 
-function configure_korifi_for_uaa() {
-  echo "Configuring Korifi to use Docker UAA at 172.19.0.1:8443..."
-  
-  # Apply the simplified UAA configuration (no routing needed)
-  kubectl apply -f "$TEMPLATES_DIR/uaa-httproute.yaml"
-  
-  echo "Korifi UAA configuration completed! UAA accessible at https://172.19.0.1:8443/"
-}
-
 function configure_uaa_rbac() {
   echo "Configuring RBAC for UAA admin user..."
   
-  kubectl apply -f - <<EOF
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  annotations:
-    cloudfoundry.org/propagate-cf-role: "true"
-  name: uaa-admin-binding
-  namespace: cf
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: korifi-controllers-admin
-subjects:
-- apiGroup: rbac.authorization.k8s.io
-  kind: User
-  name: "uaa:admin"
-EOF
-
+  kubectl apply -f "$TEMPLATES_DIR/uaa-admin-rolebinding.yaml"
+  
   echo "RBAC configuration completed!"
 }
 
@@ -336,7 +315,6 @@ function main() {
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
-  configure_korifi_for_uaa
   configure_uaa_rbac
 
   echo ""

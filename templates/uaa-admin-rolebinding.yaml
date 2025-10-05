@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    cloudfoundry.org/propagate-cf-role: "true"
+  name: uaa-admin-binding
+  namespace: "cf"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: korifi-controllers-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: "uaa:admin"
