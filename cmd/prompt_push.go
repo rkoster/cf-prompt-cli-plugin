@@ -86,9 +86,6 @@ func PromptPushCommand(cliConnection plugin.CliConnection, args []string) {
 
 	fmt.Println("OK")
 	fmt.Println()
-
-	if _, err := cliConnection.CliCommand("app", appName); err != nil {
-		fmt.Printf("Error displaying app info: %v\n", err)
-		os.Exit(1)
-	}
+	fmt.Printf("Droplet %s has been set as current for app %s.\n", dropletGUID, appName)
+	fmt.Printf("Run 'cf app %s' to see the updated app status.\n", appName)
 }
