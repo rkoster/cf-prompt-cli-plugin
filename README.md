@@ -239,4 +239,4 @@ The UAA integration includes:
 
 ## License
 
-[Add your license here]
+PolyForm Shield License 1.0.0
