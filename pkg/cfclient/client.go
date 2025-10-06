@@ -507,3 +507,106 @@ func (c *Client) zipDirectory(source, target string) error {
 		return err
 	})
 }
+
+func (c *Client) FindPackageByShortHash(appGUID, shortHash string) (*resource.Package, error) {
+	packages, err := c.ListPackagesWithPrompts(appGUID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pkg := range packages {
+		if ShortHash(pkg.GUID) == shortHash {
+			return pkg, nil
+		}
+	}
+
+	return nil, fmt.Errorf("package with hash '%s' not found", shortHash)
+}
+
+func (c *Client) GetPackageDropletGUID(packageGUID string) (string, error) {
+	url := fmt.Sprintf("%s/v3/packages/%s/droplets", c.apiURL, packageGUID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get droplets: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get droplets: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Resources []struct {
+			GUID string `json:"guid"`
+		} `json:"resources"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode droplets: %w", err)
+	}
+
+	if len(result.Resources) == 0 {
+		return "", fmt.Errorf("no droplet found for package")
+	}
+
+	return result.Resources[0].GUID, nil
+}
+
+func (c *Client) SetCurrentDroplet(appGUID, dropletGUID string) error {
+	url := fmt.Sprintf("%s/v3/apps/%s/relationships/current_droplet", c.apiURL, appGUID)
+
+	requestBody := map[string]interface{}{
+		"data": map[string]string{
+			"guid": dropletGUID,
+		},
+	}
+
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to set current droplet: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to set current droplet: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
+}

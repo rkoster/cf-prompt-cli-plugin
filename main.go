@@ -22,6 +22,8 @@ func (p *PromptPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		cmd.PromptCommand(cliConnection, args[1:])
 	case "prompts":
 		cmd.PromptsCommand(cliConnection, args[1:])
+	case "prompt-push":
+		cmd.PromptPushCommand(cliConnection, args[1:])
 	default:
 		fmt.Printf("Error: Unknown command '%s'\n", args[0])
 		os.Exit(1)
@@ -58,6 +60,13 @@ func (p *PromptPlugin) GetMetadata() plugin.PluginMetadata {
 				HelpText: "List packages for an app with their status and original prompts",
 				UsageDetails: plugin.Usage{
 					Usage: "cf prompts <APP_NAME>",
+				},
+			},
+			{
+				Name:     "prompt-push",
+				HelpText: "Update an app to use a specific package's droplet",
+				UsageDetails: plugin.Usage{
+					Usage: "cf prompt-push <APP_NAME> <PACKAGE_HASH>",
 				},
 			},
 		},
