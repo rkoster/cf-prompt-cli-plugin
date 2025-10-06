@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -10,12 +8,6 @@ import (
 	"code.cloudfoundry.org/cli/plugin"
 	"github.com/ruben/cf-prompt-cli-plugin/pkg/cfclient"
 )
-
-func shortHash(guid string) string {
-	hash := sha256.Sum256([]byte(guid))
-	hexHash := hex.EncodeToString(hash[:])
-	return hexHash[:7]
-}
 
 type simpleTable struct {
 	headers     []string
@@ -155,7 +147,7 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 	table := newSimpleTable([]string{"hash", "state", "created", "type", "original prompt"})
 
 	for _, pkg := range packages {
-		hash := shortHash(pkg.GUID)
+		hash := cfclient.ShortHash(pkg.GUID)
 
 		if currentPackageGUID != "" && pkg.GUID == currentPackageGUID {
 			hash = hash + "*"
