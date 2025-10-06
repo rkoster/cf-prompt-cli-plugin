@@ -34,7 +34,7 @@ experimental:
     enabled: true
   uaa:
     enabled: true
-    url: https://192.168.64.2:8443
+    url: https://UAA_IP_PLACEHOLDER:8443
   externalLogCache:
     enabled: false
     url: 

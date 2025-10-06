@@ -13,3 +13,5 @@
 cf-prompt
 /prompter
 pkg/prompter/prompter
+templates/uaa/uaa.yml
+templates/korifi_config.yaml

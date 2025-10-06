@@ -108,6 +108,6 @@ clean-korifi:
 	@# Remove static route for kind network on macOS with Colima
 	@if [ "$$(uname)" = "Darwin" ] && command -v colima >/dev/null 2>&1; then \
 		echo "Detected macOS with Colima - removing static route for kind network..."; \
-		sudo route delete -net 172.30.0.0/16 2>/dev/null || echo "Route was not present or already removed"; \
+		sudo route delete -net 192.168.5.0/24 2>/dev/null || echo "Route was not present or already removed"; \
 	fi
 	@echo "Kind cluster '$(CLUSTER_NAME)', local registry, and UAA container cleaned up."

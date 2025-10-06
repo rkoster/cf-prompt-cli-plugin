@@ -90,24 +90,16 @@ function setup_macos_colima_route() {
   
   echo "Detected macOS with Colima - setting up static route for kind network..."
   
-  # Get Colima VM IP
-  local colima_ip=$(colima ssh -- ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
-  
-  if [ -z "$colima_ip" ]; then
-    echo "Warning: Could not determine Colima VM IP. Route setup skipped."
-    return 0
-  fi
-  
   # Check if route already exists
-  if route -n get -net 172.30.0.0/16 >/dev/null 2>&1; then
-    echo "Route 172.30.0.0/16 already exists - skipping"
+  if route -n get -net 192.168.5.0/24 >/dev/null 2>&1; then
+    echo "Route 192.168.5.0/24 already exists - skipping"
     return 0
   fi
   
-  echo "Adding route: 172.30.0.0/16 via $colima_ip"
+  echo "Adding route: 192.168.5.0/24 via bridge100"
   
   # Add the route
-  if sudo route add -net 172.30.0.0/16 "$colima_ip"; then
+  if sudo route add -net 192.168.5.0/24 -interface bridge100; then
     echo "Static route added successfully"
   else
     echo "Failed to add route"
@@ -115,36 +107,37 @@ function setup_macos_colima_route() {
   fi
 }
 
-function ensure_kind_network() {
-  local expected_subnet="172.30.0.0/16"
-  local expected_gateway="172.30.0.1"
-  
-  # Check if kind network exists
-  if docker network inspect kind >/dev/null 2>&1; then
-    # Network exists, validate subnet
-    local current_subnet=$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
-    
-    if [ "$current_subnet" != "$expected_subnet" ]; then
-      echo "ERROR: kind network exists with incorrect subnet: $current_subnet"
-      echo ""
-      echo "Expected subnet: $expected_subnet"
-      echo ""
-      echo "Please delete the kind network and try again:"
-      echo "  1. Delete any existing kind clusters: kind delete cluster --name <cluster-name>"
-      echo "  2. Delete the kind network: docker network rm kind"
-      echo "  3. Re-run this script"
-      exit 1
-    fi
-    
-    echo "kind network validated with correct subnet: $expected_subnet"
+
+
+function get_uaa_ip() {
+  # Determine UAA IP based on platform
+  if [ "$(uname)" = "Darwin" ] && command -v colima >/dev/null 2>&1; then
+    # macOS with Colima - use Colima host IP
+    echo "192.168.64.2"
   else
-    # Network doesn't exist, create it with correct subnet
-    echo "Creating kind network with subnet $expected_subnet..."
-    docker network create kind \
-      --driver=bridge \
-      --subnet="$expected_subnet" \
-      --gateway="$expected_gateway"
-    echo "kind network created successfully"
+    # Linux or other platforms - use kind gateway IP
+    echo "172.30.0.1"
+  fi
+}
+
+function generate_config_files() {
+  local uaa_ip=$(get_uaa_ip)
+  echo "Generating configuration files with UAA IP: $uaa_ip"
+  
+  # Generate uaa.yml from template
+  if [ -f "${TEMPLATES_DIR}/uaa/uaa.yml.template" ]; then
+    echo "Generating uaa.yml from template..."
+    sed "s/UAA_IP_PLACEHOLDER/$uaa_ip/g" "${TEMPLATES_DIR}/uaa/uaa.yml.template" > "${TEMPLATES_DIR}/uaa/uaa.yml"
+  else
+    echo "Warning: uaa.yml.template not found, using existing uaa.yml"
+  fi
+  
+  # Generate korifi_config.yaml from template
+  if [ -f "${TEMPLATES_DIR}/korifi_config.yaml.template" ]; then
+    echo "Generating korifi_config.yaml from template..."
+    sed "s/UAA_IP_PLACEHOLDER/$uaa_ip/g" "${TEMPLATES_DIR}/korifi_config.yaml.template" > "${TEMPLATES_DIR}/korifi_config.yaml"
+  else
+    echo "Warning: korifi_config.yaml.template not found, using existing korifi_config.yaml"
   fi
 }
 
@@ -154,15 +147,12 @@ function start_uaa_docker() {
   docker stop uaa nginx-ssl 2>/dev/null || true
   docker rm uaa nginx-ssl 2>/dev/null || true
   
-  # Get kind network gateway IP (static IP for UAA access from kind cluster)
-  local kind_gateway_ip="172.30.0.1"
-  
   # Ensure SSL certificate directory exists
   mkdir -p "${TEMPLATES_DIR}/uaa-cert"
   
-  # Generate SSL certificate with SAN including both hostname and gateway IP
+  # Generate SSL certificate with SAN including both platform IPs
   if [ ! -f "${TEMPLATES_DIR}/uaa-cert/uaa.crt" ]; then
-    echo "Generating SSL certificate for UAA with SAN (including kind gateway IP 172.30.0.1)..."
+    echo "Generating SSL certificate for UAA with SAN (including both platform IPs)..."
     cat > "${TEMPLATES_DIR}/uaa-cert/uaa.cnf" <<EOF
 [req]
 default_bits = 2048
@@ -188,6 +178,8 @@ extendedKeyUsage = serverAuth
 DNS.1 = localhost
 IP.1 = 127.0.0.1
 IP.2 = 172.30.0.1
+IP.3 = 192.168.5.2
+IP.4 = 192.168.64.2
 EOF
     
     openssl req -new -x509 -nodes -days 365 \
@@ -195,6 +187,13 @@ EOF
       -keyout "${TEMPLATES_DIR}/uaa-cert/uaa.key" \
       -out "${TEMPLATES_DIR}/uaa-cert/uaa.crt"
   fi
+  
+  # Generate configuration files with correct UAA IP
+  generate_config_files
+  
+  # Get platform-specific UAA IP
+  local uaa_ip=$(get_uaa_ip)
+  echo "Using UAA IP: $uaa_ip"
   
   # Start UAA on HTTP only (nginx will handle SSL termination)
   # Configure Tomcat to trust X-Forwarded-* headers from nginx proxy
@@ -237,11 +236,11 @@ EOF
     --add-host=host.docker.internal:host-gateway \
     nginx:alpine
   
-  # Wait for HTTPS to be ready at gateway IP
-  echo "Waiting for nginx HTTPS proxy to be ready at 172.30.0.1:8443..."
+  # Wait for HTTPS to be ready at UAA IP
+  echo "Waiting for nginx HTTPS proxy to be ready at $uaa_ip:8443..."
   for i in {1..15}; do
-    if curl -k -s https://172.30.0.1:8443/login > /dev/null 2>&1; then
-      echo "UAA is ready on HTTPS at https://172.30.0.1:8443!"
+    if curl -k -s https://$uaa_ip:8443/login > /dev/null 2>&1; then
+      echo "UAA is ready on HTTPS at https://$uaa_ip:8443!"
       return 0
     fi
     echo "Waiting for UAA HTTPS access (attempt $i/15)..."
@@ -266,30 +265,34 @@ function prepare_uaa_oidc_config() {
 }
 
 function connect_uaa_to_kind_network() {
-  echo "Connecting UAA containers to kind network for 172.30.0.1 access..."
+  local uaa_ip=$(get_uaa_ip)
+  echo "Connecting UAA containers to kind network for $uaa_ip access..."
   
-  # Ensure kind network exists
-  if ! docker network inspect kind > /dev/null 2>&1; then
-    echo "ERROR: kind network does not exist. Create kind cluster first."
-    exit 1
+  # Only connect to kind network if using Linux (172.30.0.1)
+  # Colima/macOS uses the host network bridge
+  if [ "$uaa_ip" = "172.30.0.1" ]; then
+    # Connect nginx-ssl to kind network (this provides the 172.30.0.1:8443 endpoint)
+    if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
+      docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
+    fi
+    
+    # Connect UAA container as well
+    if docker ps -q -f name=uaa > /dev/null 2>&1; then
+      docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
+    fi
+    
+    echo "UAA accessible on kind network at $uaa_ip:8443 (nginx-ssl proxy)"
+  else
+    echo "Using Colima/macOS - UAA accessible at $uaa_ip:8443 via host network"
   fi
-  
-  # Connect nginx-ssl to kind network (this provides the 172.30.0.1:8443 endpoint)
-  if docker ps -q -f name=nginx-ssl > /dev/null 2>&1; then
-    docker network connect kind nginx-ssl 2>/dev/null || echo "nginx-ssl already connected to kind network"
-  fi
-  
-  # Connect UAA container as well
-  if docker ps -q -f name=uaa > /dev/null 2>&1; then
-    docker network connect kind uaa 2>/dev/null || echo "uaa already connected to kind network"
-  fi
-  
-  echo "UAA accessible on kind network at 172.30.0.1:8443 (nginx-ssl proxy)"
 }
 
 function ensure_kind_cluster() {
+  # Always prepare UAA OIDC config - needed for both new and existing clusters
+  prepare_uaa_oidc_config
+  
   if ! kind get clusters | grep -q "$CLUSTER_NAME"; then
-    prepare_uaa_oidc_config
+    local uaa_ip=$(get_uaa_ip)
     
     cat > /tmp/kind-config.yaml <<EOF
 kind: Cluster
@@ -317,7 +320,7 @@ nodes:
           mountPath: /etc/uaa-oidc
           readOnly: true
       extraArgs:
-        oidc-issuer-url: https://172.30.0.1:8443/oauth/token
+        oidc-issuer-url: https://$uaa_ip:8443/oauth/token
         oidc-client-id: cf
         oidc-username-claim: user_name
         oidc-username-prefix: "uaa:"
@@ -389,18 +392,19 @@ function configure_uaa_rbac() {
 
 function main() {
   parse_cmdline_args "$@"
-  ensure_kind_network
   setup_macos_colima_route
   start_uaa_docker
   ensure_kind_cluster "$CLUSTER_NAME"
   deploy_korifi
   configure_uaa_rbac
 
+  local uaa_ip=$(get_uaa_ip)
+
   echo ""
   echo "✅ Korifi with UAA deployment completed successfully!"
   echo ""
   echo "UAA Access:"
-  echo "  - UAA URL: https://172.30.0.1:8443/uaa"
+  echo "  - UAA URL: https://$uaa_ip:8443/uaa"
   echo "  - Admin user: admin/admin_secret"
   echo ""
   echo "Korifi Access:"

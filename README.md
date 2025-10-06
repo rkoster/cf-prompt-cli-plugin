@@ -98,6 +98,15 @@ make deploy-korifi-debug
 make clean-korifi
 ```
 
+#### Colima Configuration
+
+When using Colima instead of docker on a linux host, additional network configuration is required:
+
+```bash
+# Add network route for Kubernetes cluster access
+sudo route add -net 192.168.5.0/24 -interface bridge100
+```
+
 #### Key Deployment Files
 
 - **`scripts/deploy-korifi-stable.sh`**: Main deployment script that orchestrates the entire setup
