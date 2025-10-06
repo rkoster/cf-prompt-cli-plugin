@@ -1,6 +1,7 @@
 # Temporary files and logs
 *.log
 *.tmp
+.tmp/
 
 # IDE files
 .vscode/

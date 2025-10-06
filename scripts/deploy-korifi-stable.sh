@@ -255,11 +255,11 @@ EOF
 function prepare_uaa_oidc_config() {
   echo "Preparing UAA OIDC configuration for Kubernetes API server..."
   
-  # Create directory for OIDC certificates
-  mkdir -p /tmp/uaa-oidc
+  # Create directory for OIDC certificates in project directory (accessible in Colima)
+  mkdir -p "${ROOT_DIR}/.tmp/uaa-oidc"
   
   # Copy UAA SSL certificate for K8s API server to trust
-  cp "${TEMPLATES_DIR}/uaa-cert/uaa.crt" /tmp/uaa-oidc/uaa-ca.crt
+  cp "${TEMPLATES_DIR}/uaa-cert/uaa.crt" "${ROOT_DIR}/.tmp/uaa-oidc/uaa-ca.crt"
   
   echo "UAA OIDC configuration prepared with CA certificate."
 }
@@ -301,7 +301,7 @@ nodes:
 - role: control-plane
   extraMounts:
   - containerPath: /etc/uaa-oidc
-    hostPath: /tmp/uaa-oidc
+    hostPath: ${ROOT_DIR}/.tmp/uaa-oidc
     readOnly: true
   extraPortMappings:
   - containerPort: 32080
