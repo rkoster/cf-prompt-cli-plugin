@@ -1,13 +1,20 @@
 # cf-prompt-cli-plugin
 
-A Cloud Foundry CLI plugin that lets developers execute development tasks directly from natural language prompts. 
-Run prompts as CF tasks seamlessly—keeping the simplicity and spirit of Cloud Foundry's "I do not care how" philosophy.
+A Cloud Foundry CLI plugin that uses AI (via OpenCode) to automatically modify your application code based on natural language prompts. The plugin downloads your app's source code, executes the prompt using OpenCode, and creates a new package revision ready to deploy.
+
+## How It Works
+
+1. **Download**: Fetches your app's latest package from Cloud Foundry
+2. **Execute**: Runs OpenCode with your natural language prompt to modify the code
+3. **Upload**: Creates a new package revision with the AI-generated changes
+4. **Deploy**: Use `cf prompt-push` to stage and deploy the changes
 
 ## Features
 
-- **Natural Language Tasks**: Execute development tasks using natural language prompts
-- **Seamless CF Integration**: Built as a native CF CLI plugin with familiar commands
-- **Simple Workflow**: Maintains Cloud Foundry's philosophy of simplicity
+- **AI-Powered Code Changes**: Modify your app using natural language prompts via OpenCode
+- **Package-Based Workflow**: Creates new package revisions without disrupting your running app
+- **Prompt History**: Track all prompts used to create each package revision
+- **Selective Deployment**: Review and deploy only the changes you want
 
 ## Installation
 
@@ -16,40 +23,109 @@ Run prompts as CF tasks seamlessly—keeping the simplicity and spirit of Cloud 
 - Go 1.19+ 
 - Cloud Foundry CLI v6.7.0+
 - Devbox (for development)
+- A Korifi-based Cloud Foundry deployment
 
 ### Build and Install
 
 ```bash
 # Clone the repository
-git clone https://github.com/ruben/cf-prompt-cli-plugin
+git clone https://github.com/rkoster/cf-prompt-cli-plugin
 cd cf-prompt-cli-plugin
 
-# Build the plugin
-make build
-
-# Install to CF CLI
+# Build and install the plugin
 make install
 ```
 
-
+This will build the plugin, including the embedded prompter binary, and install it to your CF CLI.
 
 ## Usage
 
-### Execute a Prompt as Task
+### Initial Setup
 
-Run a natural language prompt as a CF task:
+Before using prompts, initialize the prompter app for your application (one-time setup):
 
 ```bash
-cf prompt "optimize database queries in the user service"
-cf prompt "run performance tests on the API endpoints"
-cf prompt "check logs for errors in the last hour"
+cf prompt-init my-app
 ```
+
+This creates a `my-app-prompter` application that will execute OpenCode runs.
+
+### Execute a Prompt
+
+Run a natural language prompt to modify your app:
+
+```bash
+cf prompt my-app -p "change hello world to foo bar"
+cf prompt my-app -p "add error handling to the API endpoints"
+cf prompt my-app -p "optimize database queries"
+```
+
+This will:
+1. Download your app's current source code
+2. Execute OpenCode with your prompt to modify the code
+3. Create a new package revision with the changes
+4. The prompter app will automatically stop when complete
+
+### List Available Packages
+
+View all package revisions with their prompts and status:
+
+```bash
+cf prompts my-app
+```
+
+Output shows:
+- **hash**: Short package identifier (asterisk indicates currently deployed)
+- **state**: Package state (ready, processing, etc.)
+- **droplet**: Whether a droplet exists (staged/unstaged)
+- **created**: Creation timestamp
+- **type**: Package type
+- **original prompt**: The prompt used to create this revision
+
+### Deploy a Package
+
+Stage and deploy a specific package revision:
+
+```bash
+cf prompt-push my-app <PACKAGE_HASH>
+```
+
+This will:
+1. Find the package by its short hash
+2. Trigger staging if no droplet exists (shows build logs)
+3. Set the droplet as current for your app
+4. Your app will use the new code on next restart
 
 ## Commands
 
 | Command | Description | Usage |
 |---------|-------------|-------|
-| `cf prompt` | Execute a natural language prompt as a CF task | `cf prompt [prompt text]` |
+| `cf prompt-init` | Initialize prompter app for an application (one-time setup) | `cf prompt-init <APP_NAME>` |
+| `cf prompt` | Execute a natural language prompt to modify app code | `cf prompt <APP_NAME> -p 'prompt text'` |
+| `cf prompts` | List all package revisions with their prompts and status | `cf prompts <APP_NAME>` |
+| `cf prompt-push` | Deploy a specific package revision | `cf prompt-push <APP_NAME> <PACKAGE_HASH>` |
+
+## Workflow Example
+
+```bash
+# 1. Push your initial app
+cf push my-app
+
+# 2. Initialize the prompter (one-time)
+cf prompt-init my-app
+
+# 3. Create a code revision using a prompt
+cf prompt my-app -p "add a /health endpoint that returns 200 OK"
+
+# 4. View all package revisions and their prompts
+cf prompts my-app
+
+# 5. Deploy a specific revision (use the hash from step 4)
+cf prompt-push my-app a1b2c3d
+
+# 6. Restart your app to use the new code
+cf restart my-app
+```
 
 ## Development
 
