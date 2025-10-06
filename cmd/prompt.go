@@ -90,6 +90,15 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 		os.Exit(1)
 	}
 
+	prompterName := fmt.Sprintf("%s-prompter", app)
+	prompterGUID, err := client.GetAppGUID(prompterName, currentSpace.Guid)
+	if err != nil || prompterGUID == "" {
+		fmt.Printf("Error: Prompter app '%s' does not exist\n", prompterName)
+		fmt.Printf("Please run the following command first:\n")
+		fmt.Printf("  cf prompt-init %s\n", app)
+		os.Exit(1)
+	}
+
 	registryUsername := os.Getenv("REGISTRY_USERNAME")
 	if registryUsername == "" {
 		registryUsername = "user"
@@ -100,9 +109,9 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 		registryPassword = "password"
 	}
 
-	deployer := prompter.NewAppDeployer(cliConnection)
+	deployer := prompter.NewAppDeployer(cliConnection, prompterName)
 
-	if err := deployer.Deploy(
+	if err := deployer.StartPrompter(
 		apiEndpoint,
 		token,
 		appGUID,
@@ -112,13 +121,13 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 		registryPassword,
 		prompt,
 	); err != nil {
-		fmt.Printf("Error deploying prompter app: %v\n", err)
+		fmt.Printf("Error starting prompter app: %v\n", err)
 		os.Exit(1)
 	}
 
 	defer func() {
-		if err := deployer.Cleanup(); err != nil {
-			fmt.Printf("Warning: Failed to cleanup prompter app: %v\n", err)
+		if err := deployer.StopPrompter(); err != nil {
+			fmt.Printf("Warning: Failed to stop prompter app: %v\n", err)
 		}
 	}()
 
