@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cloudfoundry/go-cfclient/v3/client"
 	"github.com/cloudfoundry/go-cfclient/v3/config"
@@ -566,6 +567,249 @@ func (c *Client) GetPackageDropletGUID(packageGUID string) (string, error) {
 	}
 
 	return result.Resources[0].GUID, nil
+}
+
+func (c *Client) GetBuildStatus(buildGUID string) (string, error) {
+	url := fmt.Sprintf("%s/v3/builds/%s", c.apiURL, buildGUID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get build status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get build status: status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		State string `json:"state"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode build status: %w", err)
+	}
+
+	return result.State, nil
+}
+
+func (c *Client) StreamBuildLogs(buildGUID string, output io.Writer) error {
+	url := fmt.Sprintf("%s/v3/builds/%s/actions/logs", c.apiURL, buildGUID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Accept", "text/plain")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to stream build logs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to stream build logs: status %d", resp.StatusCode)
+	}
+
+	_, err = io.Copy(output, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to copy build logs: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Client) WaitForBuildCompletion(buildGUID string, output io.Writer) (string, error) {
+	fmt.Fprintf(output, "Waiting for staging to complete...\n")
+
+	// First, try to get the logs
+	if err := c.StreamBuildLogs(buildGUID, output); err != nil {
+		fmt.Fprintf(output, "Warning: Could not stream build logs: %v\n", err)
+	}
+
+	// Poll for completion
+	for {
+		status, err := c.GetBuildStatus(buildGUID)
+		if err != nil {
+			return "", fmt.Errorf("failed to check build status: %w", err)
+		}
+
+		switch status {
+		case "STAGED":
+			fmt.Fprintf(output, "Staging completed successfully\n")
+			return "STAGED", nil
+		case "FAILED":
+			fmt.Fprintf(output, "Staging failed\n")
+			return "FAILED", fmt.Errorf("build failed")
+		case "STAGING":
+			fmt.Fprintf(output, ".")
+			// Continue polling
+		default:
+			fmt.Fprintf(output, "Build status: %s\n", status)
+		}
+
+		// Wait a bit before polling again
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func (c *Client) GetBuildDropletGUID(buildGUID string) (string, error) {
+	url := fmt.Sprintf("%s/v3/builds/%s", c.apiURL, buildGUID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get build: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get build: status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Droplet struct {
+			GUID string `json:"guid"`
+		} `json:"droplet"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode build: %w", err)
+	}
+
+	return result.Droplet.GUID, nil
+}
+
+func (c *Client) TriggerBuild(packageGUID string) (string, error) {
+	url := fmt.Sprintf("%s/v3/builds", c.apiURL)
+
+	requestBody := map[string]interface{}{
+		"package": map[string]string{
+			"guid": packageGUID,
+		},
+	}
+
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to trigger build: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to trigger build: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		GUID string `json:"guid"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode build response: %w", err)
+	}
+
+	return result.GUID, nil
+}
+
+func (c *Client) GetPackageDropletStatus(packageGUID string) (string, error) {
+	url := fmt.Sprintf("%s/v3/packages/%s/droplets", c.apiURL, packageGUID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", c.token)
+	req.Header.Set("Accept", "application/json")
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "unknown", nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "none", nil
+	}
+
+	var result struct {
+		Resources []struct {
+			GUID  string `json:"guid"`
+			State string `json:"state"`
+		} `json:"resources"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "unknown", nil
+	}
+
+	if len(result.Resources) == 0 {
+		return "none", nil
+	}
+
+	return strings.ToLower(result.Resources[0].State), nil
 }
 
 func (c *Client) SetCurrentDroplet(appGUID, dropletGUID string) error {

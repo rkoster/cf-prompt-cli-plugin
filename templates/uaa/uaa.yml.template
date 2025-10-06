@@ -102,7 +102,7 @@ oauth:
       authorities: clients.read,clients.write,clients.secret,uaa.admin,scim.read,scim.write,password.write
       secret: admin-secret
     cf:
-      access-token-validity: 1200
+      access-token-validity: 86400
       authorities: uaa.none
       authorized-grant-types: password,refresh_token,urn:ietf:params:oauth:grant-type:jwt-bearer
       override: true

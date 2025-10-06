@@ -128,5 +128,15 @@ func (c *Client) UploadPackage(client *cfclient.Client, appGUID string, sourceDi
 	}
 
 	fmt.Printf("Package created successfully: %s\n", pkg.GUID)
+
+	fmt.Printf("Triggering build for package %s...\n", pkg.GUID)
+	buildGUID, err := client.TriggerBuild(pkg.GUID)
+	if err != nil {
+		return fmt.Errorf("failed to trigger build: %w", err)
+	}
+
+	fmt.Printf("Build triggered successfully: %s\n", buildGUID)
+	fmt.Println("Build is now staging (check status with 'cf prompts <app-name>')")
+
 	return nil
 }

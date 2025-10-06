@@ -72,11 +72,40 @@ func PromptPushCommand(cliConnection plugin.CliConnection, args []string) {
 
 	dropletGUID, err := client.GetPackageDropletGUID(pkg.GUID)
 	if err != nil {
-		fmt.Printf("Error getting droplet for package: %v\n", err)
-		os.Exit(1)
-	}
+		fmt.Printf("No droplet found for package. Triggering staging...\n")
 
-	fmt.Printf("Found droplet %s\n", dropletGUID)
+		// Trigger build
+		buildGUID, err := client.TriggerBuild(pkg.GUID)
+		if err != nil {
+			fmt.Printf("Error triggering build: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Build %s started for package %s\n", buildGUID, pkg.GUID)
+
+		// Wait for completion while showing logs
+		status, err := client.WaitForBuildCompletion(buildGUID, os.Stdout)
+		if err != nil {
+			fmt.Printf("Error during staging: %v\n", err)
+			os.Exit(1)
+		}
+
+		if status != "STAGED" {
+			fmt.Printf("Staging failed with status: %s\n", status)
+			os.Exit(1)
+		}
+
+		// Get the droplet GUID from the completed build
+		dropletGUID, err = client.GetBuildDropletGUID(buildGUID)
+		if err != nil {
+			fmt.Printf("Error getting droplet from build: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Staging completed. Created droplet %s\n", dropletGUID)
+	} else {
+		fmt.Printf("Found droplet %s\n", dropletGUID)
+	}
 
 	fmt.Println("Setting droplet as current...")
 	if err := client.SetCurrentDroplet(appGUID, dropletGUID); err != nil {

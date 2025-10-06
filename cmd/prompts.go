@@ -144,7 +144,7 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 		return
 	}
 
-	table := newSimpleTable([]string{"hash", "state", "created", "type", "original prompt"})
+	table := newSimpleTable([]string{"hash", "state", "droplet", "created", "type", "original prompt"})
 
 	for _, pkg := range packages {
 		hash := cfclient.ShortHash(pkg.GUID)
@@ -165,7 +165,13 @@ func PromptsCommand(cliConnection plugin.CliConnection, args []string) {
 		}
 
 		state := strings.ToLower(string(pkg.State))
-		table.addRow(hash, state, createdAt, pkg.Type, prompt)
+
+		dropletStatus, err := client.GetPackageDropletStatus(pkg.GUID)
+		if err != nil {
+			dropletStatus = "unknown"
+		}
+
+		table.addRow(hash, state, dropletStatus, createdAt, pkg.Type, prompt)
 	}
 
 	table.print()
