@@ -85,4 +85,10 @@ func PromptPushCommand(cliConnection plugin.CliConnection, args []string) {
 	}
 
 	fmt.Println("OK")
+	fmt.Println()
+
+	if _, err := cliConnection.CliCommand("app", appName); err != nil {
+		fmt.Printf("Error displaying app info: %v\n", err)
+		os.Exit(1)
+	}
 }
