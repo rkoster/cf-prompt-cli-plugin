@@ -24,6 +24,8 @@ func (p *PromptPlugin) Run(cliConnection plugin.CliConnection, args []string) {
 		cmd.PromptsCommand(cliConnection, args[1:])
 	case "prompt-push":
 		cmd.PromptPushCommand(cliConnection, args[1:])
+	case "prompt-init":
+		cmd.PromptInitCommand(cliConnection, args[1:])
 	default:
 		fmt.Printf("Error: Unknown command '%s'\n", args[0])
 		os.Exit(1)
@@ -67,6 +69,13 @@ func (p *PromptPlugin) GetMetadata() plugin.PluginMetadata {
 				HelpText: "Update an app to use a specific package's droplet",
 				UsageDetails: plugin.Usage{
 					Usage: "cf prompt-push <APP_NAME> <PACKAGE_HASH>",
+				},
+			},
+			{
+				Name:     "prompt-init",
+				HelpText: "Initialize prompter app for an application (one-time setup)",
+				UsageDetails: plugin.Usage{
+					Usage: "cf prompt-init <APP_NAME>",
 				},
 			},
 		},
