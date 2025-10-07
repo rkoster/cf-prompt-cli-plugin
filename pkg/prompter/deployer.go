@@ -1,6 +1,7 @@
 package prompter
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -60,13 +61,21 @@ func (d *AppDeployer) StartPrompter(apiEndpoint, token, appID, spaceID, orgID, r
 
 	for key, value := range envVars {
 		if _, err := d.cliConnection.CliCommand("set-env", d.appName, key, value); err != nil {
-			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+			// Try manual set-env as fallback
+			cmd := exec.Command("cf", "set-env", d.appName, key, value)
+			if output, setEnvErr := cmd.CombinedOutput(); setEnvErr != nil {
+				return fmt.Errorf("failed to set environment variable %s: %v\nOutput: %s", key, setEnvErr, string(output))
+			}
 		}
 	}
 
 	fmt.Printf("Starting prompter app '%s'...\n", d.appName)
 	if _, err := d.cliConnection.CliCommand("start", d.appName); err != nil {
-		return fmt.Errorf("failed to start app: %w", err)
+		// Try manual start as fallback
+		cmd := exec.Command("cf", "start", d.appName)
+		if output, startErr := cmd.CombinedOutput(); startErr != nil {
+			return fmt.Errorf("failed to start app: %v\nOutput: %s", startErr, string(output))
+		}
 	}
 
 	fmt.Println("Prompter app started successfully")
@@ -157,12 +166,13 @@ func (d *AppDeployer) Cleanup() error {
 }
 
 func (d *AppDeployer) StopPrompter() error {
-	fmt.Printf("Stopping prompter app '%s'...\n", d.appName)
 	if _, err := d.cliConnection.CliCommand("stop", d.appName); err != nil {
-		return fmt.Errorf("failed to stop app: %w", err)
+		// Try manual stop as fallback
+		cmd := exec.Command("cf", "stop", d.appName)
+		if _, stopErr := cmd.CombinedOutput(); stopErr != nil {
+			return fmt.Errorf("failed to stop app: %v", stopErr)
+		}
 	}
-
-	fmt.Println("Prompter app stopped successfully")
 	return nil
 }
 
@@ -261,19 +271,47 @@ applications:
 		}
 	}()
 
-	cmd := exec.Command("cf", "push", d.prompterName, "-p", tempDir, "-f", manifestPath)
-	output, err := cmd.CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "cf", "push", d.prompterName, "-p", tempDir, "-f", manifestPath, "--no-wait")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	err = cmd.Run()
 	progressDone <- true
 	fmt.Println()
 
 	if err != nil {
-		fmt.Println(string(output))
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("cf push timed out after 10 minutes")
+		}
 		return fmt.Errorf("failed to push app: %w", err)
 	}
 
+	// Wait for app to be ready since we used --no-wait
+	fmt.Print("Waiting for app to be ready")
+	for i := 0; i < 30; i++ {
+		time.Sleep(2 * time.Second)
+		fmt.Print(".")
+
+		// Check if app is ready by trying to get its info
+		checkCmd := exec.Command("cf", "app", d.prompterName)
+		if output, checkErr := checkCmd.CombinedOutput(); checkErr == nil {
+			if strings.Contains(string(output), "requested state:   started") {
+				break
+			}
+		}
+	}
+	fmt.Println()
+
 	fmt.Printf("Step 3/3: Stopping prompter app (ready for use)...\n")
+	time.Sleep(2 * time.Second) // Wait for app to be fully available
 	if _, err := d.cliConnection.CliCommand("stop", d.prompterName); err != nil {
-		return fmt.Errorf("failed to stop prompter app: %w", err)
+		// Try manual stop as fallback
+		cmd := exec.Command("cf", "stop", d.prompterName)
+		if output, stopErr := cmd.CombinedOutput(); stopErr != nil {
+			return fmt.Errorf("failed to stop prompter app: %v\nOutput: %s", stopErr, string(output))
+		}
 	}
 
 	return nil

@@ -127,7 +127,7 @@ func PromptCommand(cliConnection plugin.CliConnection, args []string) {
 
 	defer func() {
 		if err := deployer.StopPrompter(); err != nil {
-			fmt.Printf("Warning: Failed to stop prompter app: %v\n", err)
+			// Silently ignore stop errors since the main task is complete
 		}
 	}()
 
