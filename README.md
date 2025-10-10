@@ -2,6 +2,16 @@
 
 A Cloud Foundry CLI plugin that uses AI (via OpenCode) to automatically modify your application code based on natural language prompts. The plugin downloads your app's source code, executes the prompt using OpenCode, and creates a new package revision ready to deploy.
 
+## Community & Coverage
+
+This project was featured at **Cloud Foundry Day Europe 2025** in a talk titled ["Autonomous AI Teammates with Aider and Cloud Foundry: From GitHub Issue to Validated Pull Request"](https://cfdayeu2025.sched.com/event/27Dnb/) by Ruben Koster (VMware Tanzu).
+
+### Social Media Highlights
+
+> "Let's see if Ruben Koster's AI assistant finds this post. 😛 #CloudFoundryDay Europe 2025"
+> 
+> — [Ram Iyengar](https://www.linkedin.com/posts/ram-iyengar_cloudfoundryday-activity-7381276435052728320-cEVe), Chief Evangelist at Cloud Foundry Foundation
+
 ## How It Works
 
 1. **Download**: Fetches your app's latest package from Cloud Foundry
